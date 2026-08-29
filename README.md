@@ -1,6 +1,6 @@
 # Ben's Home Assistant Add-ons
 
-Repository: https://github.com/benjsnellings/home-assistant-addons
+Repository: https://github.com/smangings/home-assistant-addons
 
 ## Add-ons
 
