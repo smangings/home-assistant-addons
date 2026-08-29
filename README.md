@@ -22,7 +22,7 @@ Leave `runtime_name` blank so Multica registers Claude, Cursor, and Pi as separa
 ### Install
 
 1. HA → **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
-2. Add: `https://github.com/benjsnellings/home-assistant-addons`
+2. Add: `https://github.com/smangings/home-assistant-addons`
 3. Install RO and/or RW add-ons, set `multica_token` + provider keys, start
 4. Point Multica `local_directory` at `/workspace` on the RO daemon (and `/config` or `/workspace` on RW)
 
