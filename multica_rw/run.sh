@@ -76,7 +76,8 @@ ensure_workspace() {
 }
 
 write_agent_context() {
-  local access_label share_access media_access local_dir_hint
+  local access_label share_access media_access local_dir_hint auto_stop_section stop_minutes
+  auto_stop_section=""
   if [[ "${ACCESS_MODE}" == "ro" ]]; then
     access_label="read-only"
     share_access="read-only"
@@ -87,6 +88,20 @@ write_agent_context() {
     share_access="read-write"
     media_access="read-write"
     local_dir_hint="/config (HA config, writable) or /workspace (agent scratch)."
+    stop_minutes="$(option auto_stop_minutes "30")"
+    if [[ "${stop_minutes}" =~ ^[0-9]+$ ]] && [[ "${stop_minutes}" -gt 0 ]]; then
+      auto_stop_section="
+## Write access lifetime
+
+This add-on stops itself about ${stop_minutes} minutes after start (\`auto_stop_minutes\`). In-progress tasks end when it stops. Set the option to 0 to leave write access running.
+"
+    else
+      auto_stop_section="
+## Write access lifetime
+
+Auto-stop is off (\`auto_stop_minutes\` is 0), so write access stays up until the add-on is stopped.
+"
+    fi
   fi
 
   cat >/data/HA_AGENT_CONTEXT.md <<EOF
@@ -125,7 +140,7 @@ ha-api GET /states
 Filesystem mode is \`${ACCESS_MODE}\`. \`ha-api\` blocks non-GET when RO; \`SUPERVISOR_TOKEN\` still allows Core API calls via raw curl.
 
 This add-on publishes lifecycle status to \`sensor.multica_daemon_${ACCESS_MODE}_status\` (\`starting\` → \`authenticated\` → \`ready\` / \`error\`) via \`ha-publish-status\`.
-
+${auto_stop_section}
 Environment: \`HA_URL\`, \`HA_TOKEN\`/\`SUPERVISOR_TOKEN\`, \`MULTICA_ACCESS_MODE\`, \`MULTICA_HA_CONFIG=/config\`, \`MULTICA_WORKSPACE=/workspace\`
 EOF
 }
@@ -281,6 +296,14 @@ fi
 
 log info "Starting Multica daemon (access=${ACCESS_MODE}, device=${DEVICE_NAME})"
 log info "HA config: /config (${ACCESS_MODE}) | agent workspace: /workspace (rw) | HA API: ${HA_URL}"
+if [[ "${ACCESS_MODE}" == "rw" ]]; then
+  stop_minutes="$(option auto_stop_minutes "30")"
+  if [[ "${stop_minutes}" =~ ^[0-9]+$ ]] && [[ "${stop_minutes}" -gt 0 ]]; then
+    log info "Write access auto-stop in ${stop_minutes} minutes"
+  else
+    log info "Write access auto-stop disabled"
+  fi
+fi
 # Best “setup finished” signal from bash alone — true heartbeat readiness would
 # need a hook inside the daemon after exec.
 publish_status ready "Starting Multica daemon"

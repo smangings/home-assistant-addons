@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.11
+
+- Stop the add-on 30 minutes after each start so read-write `/config` access does not stay up
+- New option `auto_stop_minutes` (default 30, set 0 to disable). The stop goes through the Supervisor API, so the add-on stays off until you start it again
+
 ## 0.3.10
 
 - Publish lifecycle status to `sensor.multica_daemon_rw_status` (`starting` → `authenticated` → `ready` / `error`) via `ha-publish-status`
