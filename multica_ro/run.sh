@@ -4,7 +4,7 @@ set -euo pipefail
 # Permanent configuration / auth failures — s6 finish will not restart these.
 readonly EX_CONFIG=78
 
-OPTIONS_FILE="/data/options.json"
+OPTIONS_FILE="${MULTICA_OPTIONS_FILE:-/data/options.json}"
 ACCESS_MODE="${MULTICA_ACCESS_MODE:-rw}"
 DEFAULT_DEVICE_NAME="${MULTICA_DEFAULT_DEVICE_NAME:-Home Assistant}"
 DEFAULT_RUNTIME_NAME="${MULTICA_DEFAULT_RUNTIME_NAME:-}"
@@ -18,11 +18,14 @@ export XDG_CACHE_HOME="/data/.cache"
 # HA add-on containers run as root; Claude Code blocks bypassPermissions unless
 # it knows we are in a sandbox/container (see anthropics/claude-code#9184).
 export IS_SANDBOX=1
-mkdir -p "${HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}" \
-  /data/.multica /data/.claude /data/bin /data/workspace /data/.pi/agent \
-  /data/.local/bin /data/.local/share
 
 export PATH="/data/bin:/data/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH}"
+
+if [[ "${MULTICA_RUN_LIB:-}" != "1" ]]; then
+  mkdir -p "${HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}" \
+    /data/.multica /data/.claude /data/bin /data/workspace /data/.pi/agent \
+    /data/.local/bin /data/.local/share
+fi
 
 log() {
   local level="$1"; shift
@@ -193,6 +196,107 @@ configure_provider_auth() {
   fi
 }
 
+# Background sleep. Returns 0 if it finished, 1 if a signal stopped it.
+# AUTO_STOP_SLEEP_PID is read by the TERM trap in auto_stop_after.
+auto_stop_sleep() {
+  local duration="$1"
+  local status
+  sleep "${duration}" &
+  AUTO_STOP_SLEEP_PID=$!
+  set +e
+  wait "${AUTO_STOP_SLEEP_PID}"
+  status=$?
+  set -e
+  AUTO_STOP_SLEEP_PID=""
+  [[ "${status}" -eq 0 ]]
+}
+
+# One-shot timer for the read-write add-on. Runs in the background so the
+# daemon can start. A shutdown signal exits without calling Supervisor.
+auto_stop_after() {
+  local minutes="$1"
+  local seconds="$2"
+  local attempt=1
+  local delay=15
+  local told_error=0
+  local deadline
+  AUTO_STOP_SLEEP_PID=""
+
+  cancel_auto_stop() {
+    log info "auto-stop cancelled"
+    if [[ -n "${AUTO_STOP_SLEEP_PID}" ]]; then
+      kill "${AUTO_STOP_SLEEP_PID}" 2>/dev/null || true
+      wait "${AUTO_STOP_SLEEP_PID}" 2>/dev/null || true
+    fi
+    exit 0
+  }
+  trap cancel_auto_stop TERM INT
+
+  deadline="$(date -d "+${seconds} seconds" '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || true)"
+  log info "write-access add-on will stop in ${minutes} minutes${deadline:+ at ${deadline}}"
+
+  if ! auto_stop_sleep "${seconds}"; then
+    log info "auto-stop interrupted; not stopping"
+    exit 0
+  fi
+
+  log info "auto-stop reached (${minutes} minutes); stopping add-on"
+  publish_status stopped "Auto-stopped after ${minutes} minutes"
+
+  if [[ -z "${SUPERVISOR_TOKEN:-}" ]]; then
+    log error "SUPERVISOR_TOKEN is not set; add-on was not stopped"
+    publish_status error "Auto-stop failed: SUPERVISOR_TOKEN missing"
+    exit 0
+  fi
+
+  while true; do
+    if curl -fsS --max-time 30 -X POST \
+      -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+      -o /dev/null \
+      http://supervisor/addons/self/stop; then
+      log info "Supervisor accepted stop"
+      exit 0
+    fi
+    log warning "Supervisor stop failed (attempt ${attempt})"
+    if [[ "${told_error}" -eq 0 ]]; then
+      publish_status error "Auto-stop failed; will keep retrying"
+      told_error=1
+    fi
+    if [[ "${attempt}" -eq 5 ]]; then
+      log warning "still unable to stop; retrying once a minute"
+      delay=60
+    fi
+    attempt=$((attempt + 1))
+    if ! auto_stop_sleep "${delay}"; then
+      log info "auto-stop interrupted during stop retry"
+      exit 0
+    fi
+  done
+}
+
+start_write_access_auto_stop() {
+  local minutes seconds
+  if [[ "${ACCESS_MODE}" != "rw" ]]; then
+    return 0
+  fi
+  minutes="$(option auto_stop_minutes "30")"
+  if [[ ! "${minutes}" =~ ^[0-9]+$ ]] || [[ "${minutes}" -eq 0 ]]; then
+    log info "Write access auto-stop disabled"
+    return 0
+  fi
+  seconds=$((minutes * 60))
+  if [[ "${MULTICA_AUTO_STOP_SECONDS:-}" =~ ^[0-9]+$ ]]; then
+    seconds="${MULTICA_AUTO_STOP_SECONDS}"
+  fi
+  log info "Write access auto-stop in ${minutes} minutes"
+  auto_stop_after "${minutes}" "${seconds}" &
+}
+
+# Tests source this file with MULTICA_RUN_LIB=1 and stop before boot.
+if [[ "${MULTICA_RUN_LIB:-}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 ensure_workspace
 
 if [[ ! -d /config ]]; then
@@ -296,14 +400,7 @@ fi
 
 log info "Starting Multica daemon (access=${ACCESS_MODE}, device=${DEVICE_NAME})"
 log info "HA config: /config (${ACCESS_MODE}) | agent workspace: /workspace (rw) | HA API: ${HA_URL}"
-if [[ "${ACCESS_MODE}" == "rw" ]]; then
-  stop_minutes="$(option auto_stop_minutes "30")"
-  if [[ "${stop_minutes}" =~ ^[0-9]+$ ]] && [[ "${stop_minutes}" -gt 0 ]]; then
-    log info "Write access auto-stop in ${stop_minutes} minutes"
-  else
-    log info "Write access auto-stop disabled"
-  fi
-fi
+start_write_access_auto_stop
 # Best “setup finished” signal from bash alone — true heartbeat readiness would
 # need a hook inside the daemon after exec.
 publish_status ready "Starting Multica daemon"
