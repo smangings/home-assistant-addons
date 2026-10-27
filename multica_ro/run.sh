@@ -91,7 +91,7 @@ write_agent_context() {
     share_access="read-write"
     media_access="read-write"
     local_dir_hint="/config (HA config, writable) or /workspace (agent scratch)."
-    stop_minutes="$(option auto_stop_minutes "30")"
+    stop_minutes="$(option auto_stop_minutes "0")"
     if [[ "${stop_minutes}" =~ ^[0-9]+$ ]] && [[ "${stop_minutes}" -gt 0 ]]; then
       auto_stop_section="
 ## Write access lifetime
@@ -102,7 +102,7 @@ This add-on stops itself about ${stop_minutes} minutes after start (\`auto_stop_
       auto_stop_section="
 ## Write access lifetime
 
-Auto-stop is off (\`auto_stop_minutes\` is 0), so write access stays up until the add-on is stopped.
+This add-on stays on until you stop it. Set \`auto_stop_minutes\` to a positive number of minutes to have it turn itself off after that long.
 "
     fi
   fi
@@ -279,9 +279,9 @@ start_write_access_auto_stop() {
   if [[ "${ACCESS_MODE}" != "rw" ]]; then
     return 0
   fi
-  minutes="$(option auto_stop_minutes "30")"
+  minutes="$(option auto_stop_minutes "0")"
   if [[ ! "${minutes}" =~ ^[0-9]+$ ]] || [[ "${minutes}" -eq 0 ]]; then
-    log info "Write access auto-stop disabled"
+    log info "Write access stays on (auto_stop_minutes=${minutes:-0})"
     return 0
   fi
   seconds=$((minutes * 60))
