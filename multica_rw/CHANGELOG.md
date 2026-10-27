@@ -2,8 +2,7 @@
 
 ## 0.3.11
 
-- Stop the add-on 30 minutes after each start so read-write `/config` access does not stay up
-- New option `auto_stop_minutes` (default 30, set 0 to disable). The stop goes through the Supervisor API, so the add-on stays off until you start it again
+- Optional `auto_stop_minutes`. Default `0` leaves the add-on running. A positive value stops it that many minutes after start, through the Supervisor API, and it stays off until you start it again
 
 ## 0.3.10
 

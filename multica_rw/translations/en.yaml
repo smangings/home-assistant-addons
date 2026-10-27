@@ -36,5 +36,5 @@ configuration:
     name: Max concurrent tasks
     description: Maximum agent tasks this daemon runs in parallel
   auto_stop_minutes:
-    name: Auto-stop after (minutes)
-    description: Stop this add-on this many minutes after it starts. 30 by default. Set to 0 to leave write access running.
+    name: Turn off after (minutes)
+    description: Stop this add-on this many minutes after it starts. 0, the default, leaves it running.
