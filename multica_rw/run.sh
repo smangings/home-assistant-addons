@@ -241,7 +241,6 @@ auto_stop_after() {
   fi
 
   log info "auto-stop reached (${minutes} minutes); stopping add-on"
-  publish_status stopped "Auto-stopped after ${minutes} minutes"
 
   if [[ -z "${SUPERVISOR_TOKEN:-}" ]]; then
     log error "SUPERVISOR_TOKEN is not set; add-on was not stopped"
@@ -255,6 +254,7 @@ auto_stop_after() {
       -o /dev/null \
       http://supervisor/addons/self/stop; then
       log info "Supervisor accepted stop"
+      publish_status stopped "Auto-stopped after ${minutes} minutes"
       exit 0
     fi
     log warning "Supervisor stop failed (attempt ${attempt})"
@@ -274,22 +274,39 @@ auto_stop_after() {
   done
 }
 
+# Pid of the timer subshell. A crashed daemon can leave that process running
+# when s6 starts this script again; the next start stops it before arming another.
+AUTO_STOP_PIDFILE="${MULTICA_AUTO_STOP_PIDFILE:-/run/multica-auto-stop.pid}"
+
+stop_leftover_auto_stop() {
+  local old=""
+  [[ -f "${AUTO_STOP_PIDFILE}" ]] || return 0
+  old="$(tr -d '[:space:]' <"${AUTO_STOP_PIDFILE}" 2>/dev/null || true)"
+  rm -f "${AUTO_STOP_PIDFILE}"
+  if [[ "${old}" =~ ^[0-9]+$ ]]; then
+    kill "${old}" 2>/dev/null || true
+  fi
+}
+
 start_write_access_auto_stop() {
-  local minutes seconds
+  local minutes seconds timer_pid
   if [[ "${ACCESS_MODE}" != "rw" ]]; then
     return 0
   fi
+  stop_leftover_auto_stop
   minutes="$(option auto_stop_minutes "0")"
   if [[ ! "${minutes}" =~ ^[0-9]+$ ]] || [[ "${minutes}" -eq 0 ]]; then
     log info "Write access stays on (auto_stop_minutes=${minutes:-0})"
     return 0
   fi
-  seconds=$((minutes * 60))
-  if [[ "${MULTICA_AUTO_STOP_SECONDS:-}" =~ ^[0-9]+$ ]]; then
-    seconds="${MULTICA_AUTO_STOP_SECONDS}"
-  fi
+  # 10# so a hand-edited "08" is decimal. Bash otherwise treats it as octal and
+  # aborts startup under set -e.
+  seconds=$((10#${minutes} * 60))
   log info "Write access auto-stop in ${minutes} minutes"
   auto_stop_after "${minutes}" "${seconds}" &
+  timer_pid=$!
+  mkdir -p "$(dirname "${AUTO_STOP_PIDFILE}")"
+  printf '%s\n' "${timer_pid}" >"${AUTO_STOP_PIDFILE}"
 }
 
 # Tests source this file with MULTICA_RUN_LIB=1 and stop before boot.

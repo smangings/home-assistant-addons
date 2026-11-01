@@ -3,6 +3,7 @@
 ## 0.3.11
 
 - Optional `auto_stop_minutes`. Default `0` leaves the add-on running. A positive value stops it that many minutes after start, through the Supervisor API, and it stays off until you start it again
+- A restarted service replaces any timer left from a crashed daemon. `stopped` is published only after Supervisor accepts the stop
 
 ## 0.3.10
 
