@@ -3,9 +3,8 @@ version: "0.3.11"
 slug: multica_rw
 description: >-
   Multica agent daemon with read-write Home Assistant config mounts and Claude +
-  Cursor + Pi runtimes (OpenRouter for Pi). Stays on when
-  auto_stop_minutes is 0. A positive value turns it off that many
-  minutes after start.
+  Cursor + Pi runtimes (OpenRouter for Pi). Turns off 30 minutes
+  after start. Set auto_stop_minutes to 0 to leave it running.
 url: https://github.com/smangings/home-assistant-addons/tree/main/multica_rw
 arch:
   - aarch64
@@ -40,7 +39,7 @@ options:
   openrouter_api_key: ""
   openrouter_model: "anthropic/claude-sonnet-4"
   max_concurrent_tasks: 2
-  auto_stop_minutes: 0
+  auto_stop_minutes: 30
 schema:
   multica_token: password
   server_url: url
