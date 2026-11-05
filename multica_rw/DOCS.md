@@ -42,7 +42,7 @@ Use this for dashboard colors (e.g. yellow while `starting`/`authenticated`, gre
 
 ## Runtimes & updates
 
-Image seeds Claude Code, Cursor Agent (`cursor-agent`), and Pi. On every start (and every 6h) `update-agent-tools` refreshes them to the latest verified releases.
+Image seeds Claude Code, Cursor Agent (`cursor-agent`), and Pi. On every start, before the daemon launches, `update-agent-tools` tries to refresh Multica and those CLIs onto `/data`. A failed download keeps the last copy and the daemon still starts.
 
 ## Plan / provider login
 

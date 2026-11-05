@@ -4,7 +4,7 @@ Repository: https://github.com/smangings/home-assistant-addons
 
 ## Add-ons
 
-Two Multica daemon containers with real filesystem boundaries. Each ships **Claude Code**, **Cursor Agent**, and **Pi** (OpenRouter), auto-updated on start and every 6 hours.
+Two Multica daemon containers with real filesystem boundaries. Each ships **Claude Code**, **Cursor Agent**, and **Pi** (OpenRouter). On container start, before the daemon launches, the add-on tries to update Multica and those CLIs onto `/data`.
 
 | Add-on | Config / share / media | Agent workspace | Default device name |
 |--------|------------------------|-----------------|---------------------|

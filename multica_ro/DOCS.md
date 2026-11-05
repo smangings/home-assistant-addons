@@ -28,7 +28,7 @@ On boot the add-on posts lifecycle state to `sensor.multica_daemon_ro_status` (s
 
 ## Runtimes & updates
 
-Image seeds Claude Code, Cursor Agent (`cursor-agent`), and Pi. On every start (and every 6h) `update-agent-tools` refreshes them to the latest verified releases.
+Image seeds Claude Code, Cursor Agent (`cursor-agent`), and Pi. On every start, before the daemon launches, `update-agent-tools` tries to refresh Multica and those CLIs onto `/data`. A failed download keeps the last copy and the daemon still starts.
 
 ## Plan / provider login
 

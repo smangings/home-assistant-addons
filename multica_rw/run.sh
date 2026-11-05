@@ -130,7 +130,7 @@ This container runs Multica with Claude Code, Cursor Agent, and Pi CLIs.
 - \`cursor-agent\` — Cursor Agent CLI (Cursor plan via \`cursor_api_key\`)
 - \`pi\` — Pi coding agent (OpenRouter via \`openrouter_api_key\`)
 
-CLIs auto-update on start and every \`${TOOL_UPDATE_INTERVAL_SECONDS:-21600}\` seconds.
+On container start, before the daemon launches, the add-on tries to update Multica, Claude, Cursor, and Pi onto \`/data\`. A failed download keeps the last copy and the daemon still starts.
 
 ## Home Assistant API
 
@@ -344,6 +344,13 @@ fi
 
 configure_provider_auth
 write_agent_context
+
+log info "Updating Multica, Claude, Cursor, and Pi before the daemon starts"
+if [[ -x /usr/bin/update-agent-tools ]]; then
+  /usr/bin/update-agent-tools || log warning "agent CLI update failed; starting with the copies already on disk"
+else
+  log warning "update-agent-tools missing; starting with image CLIs"
+fi
 
 if ! command -v multica >/dev/null; then
   die_config "multica CLI missing from image"

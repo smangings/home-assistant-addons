@@ -2,7 +2,7 @@
 
 Read-only HA `/config` (and share/media), plus a **writable** `/workspace` for Multica agent workdirs.
 
-Ships **Claude Code**, **Cursor Agent**, and **Pi** (OpenRouter). CLIs refresh on start and every 6 hours.
+Ships **Claude Code**, **Cursor Agent**, and **Pi** (OpenRouter). On container start, the add-on tries to update Multica and those CLIs onto `/data` before the daemon launches.
 
 | Option | Purpose |
 |--------|---------|
