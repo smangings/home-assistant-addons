@@ -11,6 +11,8 @@ Two Multica daemon containers with real filesystem boundaries. Each ships **Clau
 | **Multica Daemon (read-only)** | read-only | `/workspace` (RW) | `HA Config (read-only)` |
 | **Multica Daemon (read-write)** | RW (ssl RO) | `/workspace` (RW) | `HA Config (read-write)` |
 
+`auto_stop_minutes` defaults to `0` (always on). Set it to `30` on the read-write add-on so that container turns off 30 minutes after each start. The read-only add-on stays up.
+
 Leave `runtime_name` blank so Multica registers Claude, Cursor, and Pi as separate runtimes.
 
 ### Auth options

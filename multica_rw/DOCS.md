@@ -14,10 +14,17 @@
 | `openrouter_api_key` | — | Pi → OpenRouter |
 | `openrouter_model` | `anthropic/claude-sonnet-4` | Default Pi model on OpenRouter |
 | `max_concurrent_tasks` | `2` | Concurrency |
+| `auto_stop_minutes` | `0` | Stop the add-on this many minutes after start. `0` leaves it running |
 
 ## Access boundary
 
 `/config` is read-write. `/workspace` is also available as a writable agent scratch dir.
+
+## Auto-stop
+
+The option defaults to `0`, which leaves the add-on on. On the read-write add-on, set it to `30` so that container turns off 30 minutes after each start. Any positive number uses that window instead. When the window ends, the add-on asks Supervisor to stop it. That is a requested stop, so the add-on stays off — including when Watchdog is on — until you start it again. Starting it opens a new window. In-progress agent tasks are interrupted at stop.
+
+The read-only add-on has no such option.
 
 ## Status sensor
 
@@ -28,7 +35,8 @@ On boot the add-on posts lifecycle state to `sensor.multica_daemon_rw_status`:
 | `starting` | Setup began |
 | `authenticated` | Multica login / stored credentials OK |
 | `ready` | About to start the daemon (setup finished) |
-| `error` | Permanent config/auth failure |
+| `error` | Permanent config/auth failure, or auto-stop could not reach Supervisor |
+| `stopped` | Auto-stop fired and Supervisor was asked to stop the add-on |
 
 Use this for dashboard colors (e.g. yellow while `starting`/`authenticated`, green on `ready`).
 
