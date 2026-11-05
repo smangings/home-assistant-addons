@@ -37,4 +37,4 @@ configuration:
     description: Maximum agent tasks this daemon runs in parallel
   auto_stop_minutes:
     name: Turn off after (minutes)
-    description: Stop this add-on this many minutes after it starts. 30 by default. Set to 0 to leave it running.
+    description: Stop this add-on this many minutes after it starts. 0, the default, leaves it running. Set the read-write add-on to 30.

@@ -2,7 +2,7 @@
 
 ## 0.3.11
 
-- `auto_stop_minutes` defaults to 30, so the add-on turns off 30 minutes after each start. Set it to 0 to leave it running. The stop goes through the Supervisor API, and it stays off until you start it again
+- `auto_stop_minutes` defaults to 0, so the add-on stays on. Set it to 30 on the read-write add-on to turn that container off 30 minutes after start. The stop goes through the Supervisor API, and it stays off until you start it again
 - A restarted service replaces any timer left from a crashed daemon. `stopped` is published only after Supervisor accepts the stop
 
 ## 0.3.10
