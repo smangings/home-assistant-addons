@@ -2,11 +2,11 @@ ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:bookworm
 FROM ${BUILD_FROM}
 
 ARG BUILD_ARCH=amd64
-ARG MULTICA_VERSION=0.4.15
-ARG CLAUDE_VERSION=2.1.220
+ARG MULTICA_VERSION=0.8.0
+ARG CLAUDE_VERSION=2.1.318
 # Pinned SHA256 for Claude glibc binaries (Cursor Agent also requires glibc).
-ARG CLAUDE_SHA256_X64=674f61f20ff306f3100cf9200e4c36c4b70278b5bef2884549819b942a89c863
-ARG CLAUDE_SHA256_ARM64=159e4a51d796f3bf14677577100f7efb845611b1ceaf0c30cbd8d4650d942185
+ARG CLAUDE_SHA256_X64=708c77b204db30086ff6f1ed34577bda03e1be74ced80557cbf7b54249ebf0bd
+ARG CLAUDE_SHA256_ARM64=53a0d7e219d7b0804ecba5dbc002745e89f786cc946d2de85a6470d5b2d1fb06
 # Official Node binary (bookworm apt is Node 18; Pi needs >=22.19 for /v regex).
 ARG NODE_VERSION=22.23.0
 ARG NODE_SHA256_X64=14d7de44f235534799f8b171a4050d9a6a4bc99c87e053a25d3d54afa580aa20
@@ -19,7 +19,7 @@ ENV HOME=/root \
     DEBIAN_FRONTEND=noninteractive \
     IS_SANDBOX=1
 
-# Seed Multica + Claude + Cursor + Pi. Runtime update-agent-tools keeps CLIs current.
+# Seed Multica + Claude + Cursor + Pi. /run.sh tries to refresh them onto /data before the daemon starts.
 # Debian/glibc base is required: Cursor Agent's bundled Node needs fcntl64 (fails on Alpine/musl).
 RUN \
     apt-get update \

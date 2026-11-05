@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
-# Keep Claude Code, Cursor Agent, and Pi CLIs current.
-# Intended for the background tool-updater service — not cont-init (too slow for boot).
-# Failures are logged, not fatal. Each step is time-bounded so a hang cannot block forever.
+# Try to refresh Multica, Claude Code, Cursor Agent, and Pi.
+# Called from /run.sh before the daemon starts. Failures are logged, not fatal.
+# Each step is time-bounded. Installs land on /data so they survive a container recreate.
 set -u
 
-log() { echo "[tool-updater] $*"; }
+log() { echo "[boot-update] $*"; }
 
 ARCH_RAW="$(uname -m)"
 case "${ARCH_RAW}" in
-  x86_64|amd64) CLAUDE_PLATFORM="linux-x64"; CURSOR_ARCH="x64" ;;
-  aarch64|arm64) CLAUDE_PLATFORM="linux-arm64"; CURSOR_ARCH="arm64" ;;
+  x86_64|amd64) CLAUDE_PLATFORM="linux-x64"; MULTICA_ARCH="amd64" ;;
+  aarch64|arm64) CLAUDE_PLATFORM="linux-arm64"; MULTICA_ARCH="arm64" ;;
   *) log "unsupported arch ${ARCH_RAW}"; exit 0 ;;
 esac
 
-mkdir -p /data/bin /data/.local/bin /data/.local/share /usr/local/bin \
-  /data/.npm /data/.cache
+PI_PREFIX="/data/.local"
+export PATH="/data/bin:${PI_PREFIX}/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 
-# Bound network/install steps so Supervisor never sees a stuck boot/service.
+mkdir -p /data/bin "${PI_PREFIX}/bin" /data/.npm /data/.cache /usr/local/bin
+
+# Bound network/install steps so a hang cannot block the daemon forever.
 # Exit 124 from GNU timeout means the deadline was hit.
 run_timeout() {
   local secs="$1"; shift
@@ -64,29 +66,160 @@ tail_npm_log() {
   fi
 }
 
+latest_multica_version() {
+  local url
+  url="$(run_timeout 60 curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/multica-ai/multica/releases/latest)" || return 1
+  url="${url##*/}"
+  url="${url#v}"
+  [[ "${url}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  printf '%s' "${url}"
+}
+
+multica_installed_version() {
+  local bin=""
+  if [[ -x /data/bin/multica ]]; then
+    bin=/data/bin/multica
+  elif command -v multica >/dev/null 2>&1; then
+    bin="$(command -v multica)"
+  else
+    return 0
+  fi
+  run_timeout 20 "${bin}" version 2>/dev/null | awk 'NR==1 { print $2; exit }'
+}
+
+claude_installed_version() {
+  local bin=""
+  if [[ -x /data/bin/claude ]]; then
+    bin=/data/bin/claude
+  elif command -v claude >/dev/null 2>&1; then
+    bin="$(command -v claude)"
+  else
+    return 0
+  fi
+  run_timeout 20 "${bin}" --version 2>/dev/null | awk 'NR==1 { print $1; exit }'
+}
+
+pi_prefix_version() {
+  local pkg="${PI_PREFIX}/lib/node_modules/@earendil-works/pi-coding-agent/package.json"
+  [[ -f "${pkg}" ]] || return 0
+  jq -r '.version // empty' "${pkg}" 2>/dev/null || true
+}
+
+link_pi() {
+  if [[ -x "${PI_PREFIX}/bin/pi" ]]; then
+    ln -sfn "${PI_PREFIX}/bin/pi" /data/bin/pi
+  fi
+}
+
+update_multica() {
+  log "Updating Multica CLI…"
+  local version installed tgz tmp rc expected
+  version="$(latest_multica_version || true)"
+  if [[ -z "${version}" ]]; then
+    log "could not resolve Multica latest version"
+    return 0
+  fi
+  installed="$(multica_installed_version || true)"
+  log "Multica installed=${installed:-none} latest=${version}"
+  if [[ -n "${installed}" && "${installed}" == "${version}" ]]; then
+    log "Multica already at ${installed}; skip"
+    return 0
+  fi
+
+  tgz="multica-cli-${version}-linux-${MULTICA_ARCH}.tar.gz"
+  tmp="$(mktemp -d)"
+  if ! run_timeout 60 curl -fsSL \
+      "https://github.com/multica-ai/multica/releases/download/v${version}/checksums.txt" \
+      -o "${tmp}/checksums.txt"; then
+    log "Multica checksums download failed"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  log "Multica download ${version} (timeout 180s)…"
+  run_timeout 180 curl -fsSL \
+    "https://github.com/multica-ai/multica/releases/download/v${version}/${tgz}" \
+    -o "${tmp}/${tgz}"
+  rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    log "Multica download failed ($(explain_rc "${rc}"))"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  expected="$(grep -F "  ${tgz}" "${tmp}/checksums.txt" | head -1 || true)"
+  case "${expected}" in
+    *"  ${tgz}") ;;
+    *)
+      log "Multica checksum entry missing for ${tgz}"
+      rm -rf "${tmp}"
+      return 0
+      ;;
+  esac
+  if ! printf '%s\n' "${expected}" | (cd "${tmp}" && sha256sum -c -); then
+    log "Multica checksum mismatch"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  if ! tar -xzf "${tmp}/${tgz}" -C "${tmp}" || [[ ! -f "${tmp}/multica" ]]; then
+    log "Multica archive missing binary"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  if ! install -m 0755 "${tmp}/multica" /data/bin/multica; then
+    log "Multica install to /data/bin failed"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  install -m 0755 "${tmp}/multica" /usr/local/bin/multica \
+    || log "Multica install to /usr/local/bin failed (non-fatal)"
+  rm -rf "${tmp}"
+  log "Multica ${version} installed ($(/data/bin/multica version 2>/dev/null | head -1 || echo unknown))"
+}
+
 update_claude() {
-  log "Updating Claude Code to latest…"
-  local version checksum url tmp rc
+  log "Updating Claude Code…"
+  local version checksum url tmp installed rc
   version="$(run_timeout 60 curl -fsSL https://downloads.claude.ai/claude-code-releases/latest)" || {
-    log "could not resolve Claude latest version"; return 0
+    log "could not resolve Claude latest version"
+    return 0
   }
+  version="${version//$'\r'/}"
+  version="${version//[[:space:]]/}"
+  installed="$(claude_installed_version || true)"
+  log "Claude installed=${installed:-none} latest=${version}"
+  if [[ -n "${installed}" && "${installed}" == "${version}" ]]; then
+    log "Claude already at ${installed}; skip"
+    return 0
+  fi
   checksum="$(run_timeout 60 curl -fsSL "https://downloads.claude.ai/claude-code-releases/${version}/manifest.json" \
     | jq -r --arg p "${CLAUDE_PLATFORM}" '.platforms[$p].checksum // empty')" || true
   if [[ -z "${checksum}" ]]; then
-    log "no Claude checksum for ${CLAUDE_PLATFORM} in ${version}"; return 0
+    log "no Claude checksum for ${CLAUDE_PLATFORM} in ${version}"
+    return 0
   fi
   tmp="$(mktemp)"
   url="https://downloads.claude.ai/claude-code-releases/${version}/${CLAUDE_PLATFORM}/claude"
-  if ! run_timeout 120 curl -fsSL "${url}" -o "${tmp}"; then
-    log "Claude download failed"; rm -f "${tmp}"; return 0
+  log "Claude download ${version} (timeout 600s)…"
+  run_timeout 600 curl -fsSL "${url}" -o "${tmp}"
+  rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    log "Claude download failed ($(explain_rc "${rc}"))"
+    rm -f "${tmp}"
+    return 0
   fi
   if ! echo "${checksum}  ${tmp}" | sha256sum -c -; then
-    log "Claude checksum mismatch"; rm -f "${tmp}"; return 0
+    log "Claude checksum mismatch"
+    rm -f "${tmp}"
+    return 0
   fi
-  install -m 0755 "${tmp}" /data/bin/claude
-  install -m 0755 "${tmp}" /usr/local/bin/claude
+  if ! install -m 0755 "${tmp}" /data/bin/claude; then
+    log "Claude install to /data/bin failed"
+    rm -f "${tmp}"
+    return 0
+  fi
+  install -m 0755 "${tmp}" /usr/local/bin/claude \
+    || log "Claude install to /usr/local/bin failed (non-fatal)"
   rm -f "${tmp}"
-  log "Claude Code ${version} installed ($(claude --version 2>/dev/null || true))"
+  log "Claude Code ${version} installed ($(/data/bin/claude --version 2>/dev/null | head -1 || echo unknown))"
 }
 
 update_cursor() {
@@ -110,30 +243,28 @@ update_cursor() {
   export HOME="${old_home}"
 }
 
-pi_installed_version() {
-  npm ls -g --depth=0 --json @earendil-works/pi-coding-agent 2>/dev/null \
-    | jq -r '.dependencies["@earendil-works/pi-coding-agent"].version // empty'
-}
-
 update_pi() {
   log "Updating Pi coding agent…"
-  if ! command -v npm >/dev/null; then
-    log "npm missing; skip Pi update"; return 0
+  if ! command -v npm >/dev/null 2>&1; then
+    log "npm missing; skip Pi update"
+    return 0
   fi
   export npm_config_cache=/data/.npm
+  export npm_config_prefix="${PI_PREFIX}"
   export npm_config_update_notifier=false
   export npm_config_fund=false
   export npm_config_audit=false
-  # Stream useful progress into the add-on log (HA captures stdout/stderr).
   export npm_config_loglevel="${NPM_LOGLEVEL:-info}"
 
   local installed latest rc started elapsed
   log "node=$(node -v 2>/dev/null || echo missing) npm=$(npm -v 2>/dev/null || echo missing) arch=${ARCH_RAW}"
   log_df
 
-  installed="$(pi_installed_version || true)"
+  installed="$(pi_prefix_version || true)"
   latest="$(run_timeout 60 npm view @earendil-works/pi-coding-agent version 2>/dev/null || true)"
-  log "Pi installed=${installed:-none} latest=${latest:-unknown}"
+  latest="${latest//$'\r'/}"
+  latest="${latest//[[:space:]]/}"
+  log "Pi installed=${installed:-none} latest=${latest:-unknown} prefix=${PI_PREFIX}"
 
   if [[ -z "${latest}" ]]; then
     log "could not resolve latest Pi version from npm registry (network/DNS?)"
@@ -143,36 +274,32 @@ update_pi() {
     return 0
   fi
 
-  if [[ -n "${installed}" && "${installed}" == "${latest}" ]]; then
+  if [[ -n "${installed}" && "${installed}" == "${latest}" && -x "${PI_PREFIX}/bin/pi" ]]; then
     log "Pi already at ${installed}; skip npm install"
-    if command -v pi >/dev/null; then
-      ln -sfn "$(command -v pi)" /data/bin/pi 2>/dev/null || true
-    fi
+    link_pi
     return 0
   fi
 
-  # Full npm tree is large (~13MB + deps); keep a generous bound and explain failures.
-  log "Pi ${installed:-none} → ${latest} (npm install, timeout 900s)…"
+  log "Pi ${installed:-none} → ${latest} (npm install --prefix ${PI_PREFIX}, timeout 900s)…"
   started="$(date +%s)"
-  run_timeout 900 npm install -g --omit=dev --no-audit --no-fund \
+  run_timeout 900 npm install -g --prefix "${PI_PREFIX}" --omit=dev --no-audit --no-fund \
     @earendil-works/pi-coding-agent@latest
   rc=$?
   elapsed="$(( $(date +%s) - started ))"
   log "Pi npm install finished after ${elapsed}s ($(explain_rc "${rc}"))"
 
   if [[ "${rc}" -eq 0 ]]; then
-    if command -v pi >/dev/null; then
-      ln -sfn "$(command -v pi)" /data/bin/pi 2>/dev/null || true
-    fi
-    log "Pi updated ($(pi --version 2>/dev/null || echo unknown))"
+    link_pi
+    log "Pi updated ($(${PI_PREFIX}/bin/pi --version 2>/dev/null || echo unknown))"
     return 0
   fi
 
-  log "Pi update failed (non-fatal); image-seeded pi remains available"
+  log "Pi update failed (non-fatal); previous pi remains available"
   log_df
   tail_npm_log
 }
 
+update_multica
 update_claude
 update_cursor
 update_pi
