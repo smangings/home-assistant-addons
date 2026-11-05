@@ -1,5 +1,4 @@
 #!/command/with-contenv bash
-# Do NOT run full Claude/Cursor/Pi updates here — npm/curl downloads can hang and
-# Supervisor will kill the add-on mid-boot. Image already ships working CLIs;
-# the tool-updater s6 service refreshes them in the background after start.
+# Updates run from /run.sh before the daemon starts. Do not download here:
+# a hung install in cont-init never lets s6 finish, and Supervisor restarts the add-on.
 exit 0

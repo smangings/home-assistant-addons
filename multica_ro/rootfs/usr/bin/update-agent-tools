@@ -1,31 +1,68 @@
 #!/usr/bin/env bash
-# Keep Claude Code, Cursor Agent, and Pi CLIs current.
-# Intended for the background tool-updater service — not cont-init (too slow for boot).
-# Failures are logged, not fatal. Each step is time-bounded so a hang cannot block forever.
+# Try to refresh Multica, Claude Code, Cursor Agent, and Pi.
+# Called from /run.sh before the daemon starts. Failures are logged, not fatal.
+# Each step is time-bounded. Installs land on /data so they survive a container recreate.
+# A newer image copy replaces a stale /data copy before any download, so a failed
+# download cannot hide the version shipped in the image.
 set -u
 
-log() { echo "[tool-updater] $*"; }
+log() { echo "[boot-update] $*"; }
 
 ARCH_RAW="$(uname -m)"
 case "${ARCH_RAW}" in
-  x86_64|amd64) CLAUDE_PLATFORM="linux-x64"; CURSOR_ARCH="x64" ;;
-  aarch64|arm64) CLAUDE_PLATFORM="linux-arm64"; CURSOR_ARCH="arm64" ;;
+  x86_64|amd64) CLAUDE_PLATFORM="linux-x64"; MULTICA_ARCH="amd64" ;;
+  aarch64|arm64) CLAUDE_PLATFORM="linux-arm64"; MULTICA_ARCH="arm64" ;;
   *) log "unsupported arch ${ARCH_RAW}"; exit 0 ;;
 esac
 
-mkdir -p /data/bin /data/.local/bin /data/.local/share /usr/local/bin \
-  /data/.npm /data/.cache
+# Separate from Cursor, which owns /data/.local.
+PI_PREFIX="/data/.npm-global"
+IMAGE_MULTICA="/usr/local/bin/multica"
+IMAGE_CLAUDE="/usr/local/bin/claude"
+IMAGE_CURSOR="/usr/local/bin/cursor-agent"
+IMAGE_PI="/usr/local/bin/pi"
 
-# Bound network/install steps so Supervisor never sees a stuck boot/service.
+export PATH="/data/bin:/data/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+
+# Whole pass, not each tool. Override with BOOT_UPDATE_BUDGET_SECONDS.
+BOOT_UPDATE_BUDGET_SECONDS="${BOOT_UPDATE_BUDGET_SECONDS:-1500}"
+BOOT_UPDATE_DEADLINE="${BOOT_UPDATE_DEADLINE:-$(( $(date +%s) + BOOT_UPDATE_BUDGET_SECONDS ))}"
+
+# Bound network/install steps so a hang cannot block the daemon forever.
 # Exit 124 from GNU timeout means the deadline was hit.
+# The per-step cap is also cut to whatever the boot budget has left.
 run_timeout() {
   local secs="$1"; shift
+  local now left
+  if [[ -n "${BOOT_UPDATE_DEADLINE:-}" ]]; then
+    now="$(date +%s)"
+    left="$(( BOOT_UPDATE_DEADLINE - now ))"
+    if (( left <= 0 )); then
+      log "boot update budget exhausted"
+      return 124
+    fi
+    if (( secs > left )); then
+      secs="${left}"
+    fi
+  fi
   if command -v timeout >/dev/null 2>&1; then
     timeout --signal=TERM --kill-after=30s "${secs}" "$@"
     return $?
   fi
   "$@"
   return $?
+}
+
+budget_ok() {
+  local now left
+  now="$(date +%s)"
+  left="$(( BOOT_UPDATE_DEADLINE - now ))"
+  if (( left <= 0 )); then
+    log "boot update budget exhausted; skip ${1:-next tool}"
+    return 1
+  fi
+  log "${1:-next tool}: ${left}s left in the boot update budget"
+  return 0
 }
 
 explain_rc() {
@@ -64,76 +101,360 @@ tail_npm_log() {
   fi
 }
 
+# 0 when $1 is strictly newer than $2. GNU sort -V.
+version_gt() {
+  local a="$1" b="$2" top
+  [[ -n "${a}" && -n "${b}" && "${a}" != "${b}" ]] || return 1
+  top="$(printf '%s\n%s\n' "${a}" "${b}" | sort -V | tail -1)"
+  [[ "${top}" == "${a}" ]]
+}
+
+tool_version() {
+  local bin="$1" mode="$2"
+  [[ -x "${bin}" ]] || return 0
+  case "${mode}" in
+    multica)
+      run_timeout 20 "${bin}" version 2>/dev/null | awk 'NR==1 { print $2; exit }'
+      ;;
+    *)
+      run_timeout 20 "${bin}" --version 2>/dev/null | awk 'NR==1 { print $1; exit }'
+      ;;
+  esac
+}
+
+# Replace a stale /data binary with the image copy. A failed download then
+# still runs the newer image instead of the old persisted file.
+promote_image_binary() {
+  local data_bin="$1" image_bin="$2" mode="$3"
+  local data_ver="" image_ver=""
+  [[ -e "${data_bin}" && -x "${image_bin}" ]] || return 0
+  data_ver="$(tool_version "${data_bin}" "${mode}" || true)"
+  image_ver="$(tool_version "${image_bin}" "${mode}" || true)"
+  if [[ -z "${image_ver}" ]]; then
+    return 0
+  fi
+  if [[ -n "${data_ver}" ]] && ! version_gt "${image_ver}" "${data_ver}"; then
+    return 0
+  fi
+  log "image ${mode} ${image_ver} is newer than ${data_bin} (${data_ver:-unknown}); using the image copy"
+  if ! install -m 0755 "${image_bin}" "${data_bin}"; then
+    log "could not replace ${data_bin}; removing it so PATH reaches the image"
+    rm -f "${data_bin}"
+  fi
+}
+
+latest_multica_version() {
+  local url
+  url="$(run_timeout 60 curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/multica-ai/multica/releases/latest)" || return 1
+  url="${url##*/}"
+  url="${url#v}"
+  [[ "${url}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  printf '%s' "${url}"
+}
+
+multica_installed_version() {
+  local bin=""
+  if [[ -x /data/bin/multica ]]; then
+    bin=/data/bin/multica
+  elif [[ -x "${IMAGE_MULTICA}" ]]; then
+    bin="${IMAGE_MULTICA}"
+  else
+    return 0
+  fi
+  tool_version "${bin}" multica
+}
+
+claude_installed_version() {
+  local bin=""
+  if [[ -x /data/bin/claude ]]; then
+    bin=/data/bin/claude
+  elif [[ -x "${IMAGE_CLAUDE}" ]]; then
+    bin="${IMAGE_CLAUDE}"
+  else
+    return 0
+  fi
+  tool_version "${bin}" claude
+}
+
+pi_prefix_version() {
+  local pkg="${PI_PREFIX}/lib/node_modules/@earendil-works/pi-coding-agent/package.json"
+  [[ -f "${pkg}" ]] || return 0
+  jq -r '.version // empty' "${pkg}" 2>/dev/null || true
+}
+
+link_pi() {
+  if [[ -x "${PI_PREFIX}/bin/pi" ]]; then
+    ln -sfn "${PI_PREFIX}/bin/pi" /data/bin/pi
+  fi
+}
+
+# Pi used to install into Cursor's /data/.local/bin, which is ahead of
+# /usr/local/bin on PATH. Drop that launcher so it cannot hide a newer image.
+retire_legacy_pi() {
+  local target=""
+  if [[ -e /data/.local/bin/pi || -L /data/.local/bin/pi ]]; then
+    log "removing Pi from /data/.local/bin so it does not share Cursor's directory"
+    rm -f /data/.local/bin/pi
+  fi
+  if [[ -L /data/bin/pi ]]; then
+    target="$(readlink /data/bin/pi 2>/dev/null || true)"
+    if [[ "${target}" == "/data/.local/bin/pi" || "${target}" == /data/.local/* ]]; then
+      rm -f /data/bin/pi
+    fi
+  fi
+}
+
+promote_pi() {
+  local image_ver="" data_ver="" target=""
+  retire_legacy_pi
+  if [[ -e /data/bin/pi && -x "${IMAGE_PI}" ]]; then
+    target="$(readlink /data/bin/pi 2>/dev/null || true)"
+    if [[ "${target}" != "${PI_PREFIX}/bin/pi" ]]; then
+      image_ver="$(tool_version "${IMAGE_PI}" pi || true)"
+      data_ver="$(tool_version /data/bin/pi pi || true)"
+      if [[ -n "${image_ver}" ]] && { [[ -z "${data_ver}" ]] || version_gt "${image_ver}" "${data_ver}"; }; then
+        log "image Pi ${image_ver} is newer than /data/bin/pi (${data_ver:-unknown}); removing the stale launcher"
+        rm -f /data/bin/pi
+      fi
+    fi
+  fi
+  image_ver=""
+  data_ver=""
+  [[ -x "${IMAGE_PI}" && -e "${PI_PREFIX}/bin/pi" ]] || return 0
+  image_ver="$(tool_version "${IMAGE_PI}" pi || true)"
+  data_ver="$(pi_prefix_version || true)"
+  if [[ -z "${image_ver}" ]]; then
+    return 0
+  fi
+  if [[ -n "${data_ver}" ]] && ! version_gt "${image_ver}" "${data_ver}"; then
+    return 0
+  fi
+  log "image Pi ${image_ver} is newer than ${data_ver:-unknown}; not using the /data prefix"
+  rm -f /data/bin/pi
+}
+
+cursor_installed_version() {
+  local bin=""
+  if [[ -x /data/.local/bin/cursor-agent ]]; then
+    bin=/data/.local/bin/cursor-agent
+  elif [[ -x /data/bin/cursor-agent ]]; then
+    bin=/data/bin/cursor-agent
+  elif [[ -x "${IMAGE_CURSOR}" ]]; then
+    bin="${IMAGE_CURSOR}"
+  else
+    return 0
+  fi
+  tool_version "${bin}" cursor
+}
+
+# Cursor's launcher is a script whose realpath must stay inside its version
+# directory, so a stale /data copy is removed rather than overwritten.
+promote_cursor() {
+  local data="/data/.local/bin/cursor-agent"
+  local image_real="" data_real="" image_ver="" data_ver=""
+  [[ -e "${data}" && -x "${IMAGE_CURSOR}" ]] || return 0
+  image_real="$(readlink -f "${IMAGE_CURSOR}" 2>/dev/null || true)"
+  data_real="$(readlink -f "${data}" 2>/dev/null || true)"
+  if [[ -n "${image_real}" && "${image_real}" == "${data_real}" ]]; then
+    return 0
+  fi
+  image_ver="$(tool_version "${IMAGE_CURSOR}" cursor || true)"
+  data_ver="$(tool_version "${data}" cursor || true)"
+  if [[ -z "${image_ver}" ]]; then
+    return 0
+  fi
+  if [[ -n "${data_ver}" ]] && ! version_gt "${image_ver}" "${data_ver}"; then
+    return 0
+  fi
+  log "image Cursor ${image_ver} is newer than /data (${data_ver:-unknown}); dropping the stale /data launcher"
+  rm -f /data/bin/cursor-agent /data/bin/agent /data/.local/bin/cursor-agent /data/.local/bin/agent
+}
+
+link_cursor() {
+  if [[ -x /data/.local/bin/cursor-agent ]]; then
+    ln -sfn /data/.local/bin/cursor-agent /data/bin/cursor-agent
+    ln -sfn /data/.local/bin/agent /data/bin/agent
+    ln -sfn /data/.local/bin/cursor-agent /usr/local/bin/cursor-agent
+    ln -sfn /data/.local/bin/agent /usr/local/bin/agent
+  fi
+}
+
+update_multica() {
+  budget_ok "Multica" || return 0
+  log "Updating Multica CLI…"
+  promote_image_binary /data/bin/multica "${IMAGE_MULTICA}" multica
+  local version installed tgz tmp rc expected
+  version="$(latest_multica_version || true)"
+  if [[ -z "${version}" ]]; then
+    log "could not resolve Multica latest version"
+    return 0
+  fi
+  installed="$(multica_installed_version || true)"
+  log "Multica installed=${installed:-none} latest=${version}"
+  if [[ -n "${installed}" && "${installed}" == "${version}" ]]; then
+    log "Multica already at ${installed}; skip"
+    return 0
+  fi
+
+  tgz="multica-cli-${version}-linux-${MULTICA_ARCH}.tar.gz"
+  tmp="$(mktemp -d)"
+  if ! run_timeout 60 curl -fsSL \
+      "https://github.com/multica-ai/multica/releases/download/v${version}/checksums.txt" \
+      -o "${tmp}/checksums.txt"; then
+    log "Multica checksums download failed"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  log "Multica download ${version}…"
+  run_timeout 180 curl -fsSL \
+    "https://github.com/multica-ai/multica/releases/download/v${version}/${tgz}" \
+    -o "${tmp}/${tgz}"
+  rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    log "Multica download failed ($(explain_rc "${rc}"))"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  if command -v awk >/dev/null 2>&1; then
+    expected="$(awk -v f="${tgz}" '$2 == f { print $1 "  " $2; exit }' "${tmp}/checksums.txt")"
+  else
+    expected="$(grep -F "  ${tgz}" "${tmp}/checksums.txt" | head -1 || true)"
+    case "${expected}" in
+      *"  ${tgz}") ;;
+      *) expected="" ;;
+    esac
+  fi
+  if [[ -z "${expected}" ]]; then
+    log "Multica checksum entry missing for ${tgz}"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  if ! printf '%s\n' "${expected}" | (cd "${tmp}" && sha256sum -c -); then
+    log "Multica checksum mismatch"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  if ! tar -xzf "${tmp}/${tgz}" -C "${tmp}" || [[ ! -f "${tmp}/multica" ]]; then
+    log "Multica archive missing binary"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  if ! install -m 0755 "${tmp}/multica" /data/bin/multica; then
+    log "Multica install to /data/bin failed"
+    rm -rf "${tmp}"
+    return 0
+  fi
+  install -m 0755 "${tmp}/multica" /usr/local/bin/multica \
+    || log "Multica install to /usr/local/bin failed (non-fatal)"
+  rm -rf "${tmp}"
+  log "Multica ${version} installed ($(/data/bin/multica version 2>/dev/null | head -1 || echo unknown))"
+}
+
 update_claude() {
-  log "Updating Claude Code to latest…"
-  local version checksum url tmp rc
+  budget_ok "Claude" || return 0
+  log "Updating Claude Code…"
+  promote_image_binary /data/bin/claude "${IMAGE_CLAUDE}" claude
+  local version checksum url tmp installed rc
   version="$(run_timeout 60 curl -fsSL https://downloads.claude.ai/claude-code-releases/latest)" || {
-    log "could not resolve Claude latest version"; return 0
+    log "could not resolve Claude latest version"
+    return 0
   }
+  version="${version//$'\r'/}"
+  version="${version//[[:space:]]/}"
+  installed="$(claude_installed_version || true)"
+  log "Claude installed=${installed:-none} latest=${version}"
+  if [[ -n "${installed}" && "${installed}" == "${version}" ]]; then
+    log "Claude already at ${installed}; skip"
+    return 0
+  fi
   checksum="$(run_timeout 60 curl -fsSL "https://downloads.claude.ai/claude-code-releases/${version}/manifest.json" \
     | jq -r --arg p "${CLAUDE_PLATFORM}" '.platforms[$p].checksum // empty')" || true
   if [[ -z "${checksum}" ]]; then
-    log "no Claude checksum for ${CLAUDE_PLATFORM} in ${version}"; return 0
+    log "no Claude checksum for ${CLAUDE_PLATFORM} in ${version}"
+    return 0
   fi
   tmp="$(mktemp)"
   url="https://downloads.claude.ai/claude-code-releases/${version}/${CLAUDE_PLATFORM}/claude"
-  if ! run_timeout 120 curl -fsSL "${url}" -o "${tmp}"; then
-    log "Claude download failed"; rm -f "${tmp}"; return 0
+  log "Claude download ${version}…"
+  run_timeout 600 curl -fsSL "${url}" -o "${tmp}"
+  rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    log "Claude download failed ($(explain_rc "${rc}"))"
+    rm -f "${tmp}"
+    return 0
   fi
   if ! echo "${checksum}  ${tmp}" | sha256sum -c -; then
-    log "Claude checksum mismatch"; rm -f "${tmp}"; return 0
+    log "Claude checksum mismatch"
+    rm -f "${tmp}"
+    return 0
   fi
-  install -m 0755 "${tmp}" /data/bin/claude
-  install -m 0755 "${tmp}" /usr/local/bin/claude
+  if ! install -m 0755 "${tmp}" /data/bin/claude; then
+    log "Claude install to /data/bin failed"
+    rm -f "${tmp}"
+    return 0
+  fi
+  install -m 0755 "${tmp}" /usr/local/bin/claude \
+    || log "Claude install to /usr/local/bin failed (non-fatal)"
   rm -f "${tmp}"
-  log "Claude Code ${version} installed ($(claude --version 2>/dev/null || true))"
+  log "Claude Code ${version} installed ($(/data/bin/claude --version 2>/dev/null | head -1 || echo unknown))"
 }
 
 update_cursor() {
+  budget_ok "Cursor" || return 0
   log "Updating Cursor Agent…"
-  # Official installer places agent under $HOME/.local; use /data so it persists.
-  local old_home="${HOME:-}" rc
+  promote_cursor
+  local old_home="${HOME:-}" script latest installed rc tmp
+  script="$(run_timeout 60 curl -fsSL https://cursor.com/install)" || {
+    log "could not download Cursor installer"
+    return 0
+  }
+  latest="$(printf '%s\n' "${script}" | grep -oE '[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9A-Za-z]+' | head -1 || true)"
+  installed="$(cursor_installed_version || true)"
+  log "Cursor installed=${installed:-none} latest=${latest:-unknown}"
+  if [[ -n "${latest}" && -n "${installed}" && "${installed}" == "${latest}" ]]; then
+    log "Cursor already at ${installed}; skip"
+    link_cursor
+    return 0
+  fi
   export HOME=/data
-  run_timeout 180 bash -c 'curl -fsS https://cursor.com/install | bash'
+  tmp="$(mktemp)"
+  printf '%s\n' "${script}" > "${tmp}"
+  run_timeout 180 bash "${tmp}"
   rc=$?
+  rm -f "${tmp}"
   if [[ "${rc}" -eq 0 ]]; then
-    if [[ -x /data/.local/bin/cursor-agent ]]; then
-      ln -sfn /data/.local/bin/cursor-agent /data/bin/cursor-agent
-      ln -sfn /data/.local/bin/agent /data/bin/agent
-      ln -sfn /data/.local/bin/cursor-agent /usr/local/bin/cursor-agent
-      ln -sfn /data/.local/bin/agent /usr/local/bin/agent
-    fi
-    log "Cursor Agent updated ($(cursor-agent --version 2>/dev/null || agent --version 2>/dev/null || echo unknown))"
+    link_cursor
+    log "Cursor Agent updated ($(cursor_installed_version 2>/dev/null || echo unknown))"
   else
     log "Cursor Agent update failed ($(explain_rc "${rc}")) (non-fatal)"
   fi
   export HOME="${old_home}"
 }
 
-pi_installed_version() {
-  npm ls -g --depth=0 --json @earendil-works/pi-coding-agent 2>/dev/null \
-    | jq -r '.dependencies["@earendil-works/pi-coding-agent"].version // empty'
-}
-
 update_pi() {
+  budget_ok "Pi" || return 0
   log "Updating Pi coding agent…"
-  if ! command -v npm >/dev/null; then
-    log "npm missing; skip Pi update"; return 0
+  promote_pi
+  if ! command -v npm >/dev/null 2>&1; then
+    log "npm missing; skip Pi update"
+    return 0
   fi
   export npm_config_cache=/data/.npm
+  export npm_config_prefix="${PI_PREFIX}"
   export npm_config_update_notifier=false
   export npm_config_fund=false
   export npm_config_audit=false
-  # Stream useful progress into the add-on log (HA captures stdout/stderr).
   export npm_config_loglevel="${NPM_LOGLEVEL:-info}"
 
   local installed latest rc started elapsed
   log "node=$(node -v 2>/dev/null || echo missing) npm=$(npm -v 2>/dev/null || echo missing) arch=${ARCH_RAW}"
   log_df
 
-  installed="$(pi_installed_version || true)"
+  installed="$(pi_prefix_version || true)"
   latest="$(run_timeout 60 npm view @earendil-works/pi-coding-agent version 2>/dev/null || true)"
-  log "Pi installed=${installed:-none} latest=${latest:-unknown}"
+  latest="${latest//$'\r'/}"
+  latest="${latest//[[:space:]]/}"
+  log "Pi installed=${installed:-none} latest=${latest:-unknown} prefix=${PI_PREFIX}"
 
   if [[ -z "${latest}" ]]; then
     log "could not resolve latest Pi version from npm registry (network/DNS?)"
@@ -143,36 +464,38 @@ update_pi() {
     return 0
   fi
 
-  if [[ -n "${installed}" && "${installed}" == "${latest}" ]]; then
+  if [[ -n "${installed}" && "${installed}" == "${latest}" && -x "${PI_PREFIX}/bin/pi" ]]; then
     log "Pi already at ${installed}; skip npm install"
-    if command -v pi >/dev/null; then
-      ln -sfn "$(command -v pi)" /data/bin/pi 2>/dev/null || true
-    fi
+    link_pi
     return 0
   fi
 
-  # Full npm tree is large (~13MB + deps); keep a generous bound and explain failures.
-  log "Pi ${installed:-none} → ${latest} (npm install, timeout 900s)…"
+  log "Pi ${installed:-none} → ${latest} (npm install --prefix ${PI_PREFIX})…"
   started="$(date +%s)"
-  run_timeout 900 npm install -g --omit=dev --no-audit --no-fund \
+  run_timeout 900 npm install -g --prefix "${PI_PREFIX}" --omit=dev --no-audit --no-fund \
     @earendil-works/pi-coding-agent@latest
   rc=$?
   elapsed="$(( $(date +%s) - started ))"
   log "Pi npm install finished after ${elapsed}s ($(explain_rc "${rc}"))"
 
   if [[ "${rc}" -eq 0 ]]; then
-    if command -v pi >/dev/null; then
-      ln -sfn "$(command -v pi)" /data/bin/pi 2>/dev/null || true
-    fi
-    log "Pi updated ($(pi --version 2>/dev/null || echo unknown))"
+    link_pi
+    log "Pi updated ($(${PI_PREFIX}/bin/pi --version 2>/dev/null || echo unknown))"
     return 0
   fi
 
-  log "Pi update failed (non-fatal); image-seeded pi remains available"
+  log "Pi update failed (non-fatal); previous pi remains available"
   log_df
   tail_npm_log
 }
 
+if [[ "${UPDATE_AGENT_TOOLS_LIB:-}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
+mkdir -p /data/bin /data/.local/bin "${PI_PREFIX}/bin" /data/.npm /data/.cache /usr/local/bin
+
+update_multica
 update_claude
 update_cursor
 update_pi

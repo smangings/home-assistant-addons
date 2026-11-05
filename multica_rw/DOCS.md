@@ -42,7 +42,7 @@ Use this for dashboard colors (e.g. yellow while `starting`/`authenticated`, gre
 
 ## Runtimes & updates
 
-Image seeds Claude Code, Cursor Agent (`cursor-agent`), and Pi. On every start (and every 6h) `update-agent-tools` refreshes them to the latest verified releases.
+Image seeds Claude Code, Cursor Agent (`cursor-agent`), and Pi. On every container start, after credentials succeed and before the daemon launches, `update-agent-tools` tries once to refresh Multica and those CLIs. Copies live on `/data`. If the image binary is newer, that one is kept, so a failed download cannot hide it. The pass is capped at 25 minutes (`BOOT_UPDATE_BUDGET_SECONDS`). A daemon crash does not run it again until the container restarts. While it runs, the status sensor says `starting` / `Updating agent CLIs`.
 
 ## Plan / provider login
 

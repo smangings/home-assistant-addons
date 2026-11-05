@@ -1,8 +1,0 @@
-#!/command/with-contenv bash
-# Periodic agent CLI updates (Claude / Cursor / Pi).
-# Run once shortly after boot, then every TOOL_UPDATE_INTERVAL_SECONDS (default 6h).
-sleep "${TOOL_UPDATE_BOOT_DELAY_SECONDS:-30}"
-while true; do
-  /usr/bin/update-agent-tools || true
-  sleep "${TOOL_UPDATE_INTERVAL_SECONDS:-21600}"
-done

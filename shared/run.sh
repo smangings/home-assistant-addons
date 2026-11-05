@@ -130,7 +130,7 @@ This container runs Multica with Claude Code, Cursor Agent, and Pi CLIs.
 - \`cursor-agent\` — Cursor Agent CLI (Cursor plan via \`cursor_api_key\`)
 - \`pi\` — Pi coding agent (OpenRouter via \`openrouter_api_key\`)
 
-CLIs auto-update on start and every \`${TOOL_UPDATE_INTERVAL_SECONDS:-21600}\` seconds.
+On container start, before the daemon launches, the add-on tries once to update Multica, Claude, Cursor, and Pi. Copies live on \`/data\`. If the image binary is newer, that one is kept. A failed download does not hide it, and the daemon still starts. A daemon crash does not run the update again until the container itself restarts.
 
 ## Home Assistant API
 
@@ -349,14 +349,6 @@ if ! command -v multica >/dev/null; then
   die_config "multica CLI missing from image"
 fi
 
-for tool in claude cursor-agent pi; do
-  if command -v "${tool}" >/dev/null; then
-    log info "runtime tool present: ${tool} ($(${tool} --version 2>/dev/null | head -1 || echo ok))"
-  else
-    log warning "runtime tool missing: ${tool}"
-  fi
-done
-
 log info "Configuring Multica CLI (server=${SERVER_URL})"
 mkdir -p /data/.multica
 if [[ ! -f /data/.multica/config.json ]]; then
@@ -405,6 +397,30 @@ if [[ -n "${WORKSPACE_ID}" ]]; then
   multica workspace switch "${WORKSPACE_ID}" >/dev/null 2>&1 || \
     log warning "Could not switch workspace to ${WORKSPACE_ID}"
 fi
+
+# /run is cleared when the container stops, and kept when s6 restarts this
+# service after a daemon crash. One update pass per container start.
+if [[ -e /run/boot-update.done ]]; then
+  log info "Skipping harness update; this container already ran it"
+else
+  publish_status starting "Updating agent CLIs"
+  log info "Updating Multica, Claude, Cursor, and Pi before the daemon starts"
+  if [[ -x /usr/bin/update-agent-tools ]]; then
+    /usr/bin/update-agent-tools || log warning "agent CLI update failed; starting with the copies already on disk"
+  else
+    log warning "update-agent-tools missing; starting with image CLIs"
+  fi
+  touch /run/boot-update.done || log warning "could not record boot update marker"
+  hash -r || true
+fi
+
+for tool in claude cursor-agent pi; do
+  if command -v "${tool}" >/dev/null; then
+    log info "runtime tool present: ${tool} ($(${tool} --version 2>/dev/null | head -1 || echo ok))"
+  else
+    log warning "runtime tool missing: ${tool}"
+  fi
+done
 
 DAEMON_ARGS=(
   daemon start --foreground

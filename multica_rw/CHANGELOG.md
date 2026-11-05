@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.12
+
+- On boot, try to update Multica, Claude, Cursor, and Pi before the daemon starts, and keep the copies on `/data`
+- If the image binary is newer than the `/data` copy, use the image copy before the download
+- Run that pass once per container start, after credentials succeed, and cap it at 25 minutes
+- Drop the 6-hour background updater
+- Image fallback is Multica 0.8.0 and Claude Code 2.1.318
+
 ## 0.3.11
 
 - `auto_stop_minutes` defaults to 0, so the add-on stays on. Set it to 30 on the read-write add-on to turn that container off 30 minutes after start. The stop goes through the Supervisor API, and it stays off until you start it again
