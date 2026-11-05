@@ -91,8 +91,11 @@ write_agent_context() {
     share_access="read-write"
     media_access="read-write"
     local_dir_hint="/config (HA config, writable) or /workspace (agent scratch)."
-    stop_minutes="$(option auto_stop_minutes "0")"
-    if [[ "${stop_minutes}" =~ ^[0-9]+$ ]] && [[ "${stop_minutes}" -gt 0 ]]; then
+    stop_minutes="$(option auto_stop_minutes "30")"
+    if [[ ! "${stop_minutes}" =~ ^[0-9]+$ ]]; then
+      stop_minutes=30
+    fi
+    if [[ "${stop_minutes}" -gt 0 ]]; then
       auto_stop_section="
 ## Write access lifetime
 
@@ -102,7 +105,7 @@ This add-on stops itself about ${stop_minutes} minutes after start (\`auto_stop_
       auto_stop_section="
 ## Write access lifetime
 
-This add-on stays on until you stop it. Set \`auto_stop_minutes\` to a positive number of minutes to have it turn itself off after that long.
+This add-on stays on until you stop it because \`auto_stop_minutes\` is 0. The default is 30 minutes.
 "
     fi
   fi
@@ -294,9 +297,13 @@ start_write_access_auto_stop() {
     return 0
   fi
   stop_leftover_auto_stop
-  minutes="$(option auto_stop_minutes "0")"
-  if [[ ! "${minutes}" =~ ^[0-9]+$ ]] || [[ "${minutes}" -eq 0 ]]; then
-    log info "Write access stays on (auto_stop_minutes=${minutes:-0})"
+  minutes="$(option auto_stop_minutes "30")"
+  if [[ ! "${minutes}" =~ ^[0-9]+$ ]]; then
+    log info "auto_stop_minutes=${minutes:-empty} is invalid; using 30"
+    minutes=30
+  fi
+  if [[ "${minutes}" -eq 0 ]]; then
+    log info "Write access stays on (auto_stop_minutes=0)"
     return 0
   fi
   # 10# so a hand-edited "08" is decimal. Bash otherwise treats it as octal and

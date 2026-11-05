@@ -14,7 +14,7 @@
 | `openrouter_api_key` | — | Pi → OpenRouter |
 | `openrouter_model` | `anthropic/claude-sonnet-4` | Default Pi model on OpenRouter |
 | `max_concurrent_tasks` | `2` | Concurrency |
-| `auto_stop_minutes` | `0` | Stop the add-on this many minutes after start. `0` leaves it running |
+| `auto_stop_minutes` | `30` | Stop the add-on this many minutes after start. `0` leaves it running |
 
 ## Access boundary
 
@@ -22,9 +22,9 @@
 
 ## Auto-stop
 
-By default `auto_stop_minutes` is `0` and the add-on stays on until you stop it. Set it to a positive number of minutes to turn the add-on off that long after each start. When that window ends, the add-on asks Supervisor to stop it. That is a requested stop, so the add-on stays off — including when Watchdog is on — until you start it again. Starting it opens a new window. In-progress agent tasks are interrupted at stop.
+By default `auto_stop_minutes` is `30`, so the add-on turns off 30 minutes after each start. Set it to `0` to leave it running, or to another positive number for a different window. When the window ends, the add-on asks Supervisor to stop it. That is a requested stop, so the add-on stays off — including when Watchdog is on — until you start it again. Starting it opens a new window. In-progress agent tasks are interrupted at stop.
 
-Set the option back to `0` to leave write access running. The read-only add-on has no such option.
+The read-only add-on has no such option.
 
 ## Status sensor
 

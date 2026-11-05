@@ -11,8 +11,8 @@ Ships **Claude Code**, **Cursor Agent**, and **Pi** (OpenRouter). CLIs refresh o
 | `cursor_api_key` | Cursor plan (headless) |
 | `openrouter_api_key` | Pi → OpenRouter |
 | `device_name` | default `HA Config (read-write)` |
-| `auto_stop_minutes` | turn off this many minutes after start (`0`, the default, leaves it running) |
+| `auto_stop_minutes` | turn off this many minutes after start (default `30`; `0` leaves it running) |
 
 Leave `runtime_name` blank so all three tools register as separate Multica runtimes.
 
-With the default `0`, the add-on stays on. A positive value stops it through the Supervisor stop API when the window ends. Start it again for another window.
+The default `30` stops the add-on through the Supervisor stop API 30 minutes after start. Set `0` to leave it running. Start it again for another window.
