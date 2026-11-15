@@ -1,53 +1,101 @@
-# Multica Daemon (read-write)
+# Agent Host (read-write)
 
-## Configuration
+Claude Code **Remote Control**, an optional **Cursor My Machines** worker and the **Multica** daemon, all inside one Home Assistant add-on. `/config` is mounted read-write.
+
+Every environment this add-on registers carries **RW** in its name, so you can tell it apart from the read-only add-on:
+
+| Where | Default name |
+|-------|--------------|
+| claude.ai/code · Claude app (Remote Control) | `HA Agent Host (RW)` |
+| Cursor → My Machines | `ha-agent-host-rw` |
+| Multica → Runtimes | `HA Agent Host (RW)` |
+| HA sidebar | `Agent Host RW` |
+
+Custom names (`remote_control_name`, `cursor_worker_name`, `device_name`) get ` (RW)` / `-rw` appended unless they already say RW or read-write.
+
+## Claude Code Remote Control
+
+A **read-write editor**: Remote Control sessions change `/config` directly from your phone or browser. Keep `/config` in git if you want an easy undo.
+
+**First-time sign-in** (needed once per add-on, and again when the login expires):
+
+1. Start the add-on, then open **Agent Host RW** in the HA sidebar.
+2. Answer **Y** to "Sign in Remote Control now?" (or run `claude-rc-login`).
+3. Open the printed URL, approve, and paste the code back into the terminal.
+4. Within about 15 seconds Remote Control starts. Pick **HA Agent Host (RW)** at [claude.ai/code](https://claude.ai/code) or in the Claude app.
+
+Use a Claude Pro/Max/Team/Enterprise account. The `claude_code_oauth_token` option (`claude setup-token`) can't be used for Remote Control: it is inference-only. The add-on keeps it away from Remote Control by giving RC its own HOME (`/data/remote-control`). The terminal panel is admin-only, and nginx admits only the Supervisor ingress proxy.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `remote_control` | `true` | Run Remote Control |
+| `remote_control_name` | `HA Agent Host (RW)` | Name at claude.ai/code |
+| `remote_control_directory` | `/config` | Where sessions start (falls back to `/workspace` if missing) |
+| `remote_control_permission_mode` | `default` | `default` asks for approval in the app. Other values: `acceptEdits`, `plan`, `auto`, `bypassPermissions` |
+
+Sessions get a user `CLAUDE.md` describing this add-on's RW boundary and the `ha-states` / `ha-history` / `ha-api` helpers.
+
+## Cursor My Machines (optional)
+
+Lets Cursor cloud agents run their shell and file tools on this add-on ([docs](https://cursor.com/docs/cloud-agent/self-hosted/my-machines)). The connection is outbound only; no port is opened.
+
+1. Set `cursor_api_key` to a **personal user API key**. Admin and org keys can't start workers.
+2. Set `cursor_worker: true` and restart.
+3. Pick **ha-agent-host-rw** under My Machines at [cursor.com/agents](https://cursor.com/agents).
+
+Cursor routes a repo request by git remote. By default the worker registers `/config` (if it's a git checkout with a remote) plus each `/workspace/*` checkout that has a remote. Override with `cursor_worker_dirs` (colon-separated). New clones are picked up within about a minute. The worker process only receives the Cursor key: no Multica, Claude or OpenRouter secrets, and no `SUPERVISOR_TOKEN`.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `cursor_worker` | `false` | Run the My Machines worker |
+| `cursor_worker_name` | `ha-agent-host-rw` | Machine name (`worker=<name>` triggers) |
+| `cursor_worker_dirs` | *(auto)* | Colon-separated checkout roots |
+
+## Multica daemon (optional)
 
 | Option | Default when blank | Description |
 |--------|--------------------|-------------|
-| `multica_token` | **required** | Multica PAT (`mul_…`) |
+| `multica_token` | — | Multica PAT (`mul_…`). Blank = daemon not started |
 | `server_url` / `app_url` | Multica Cloud | Self-host override |
-| `device_name` | `HA Config (read-write)` | Computer name in Multica |
+| `device_name` | `HA Agent Host (RW)` | Computer name in Multica |
 | `runtime_name` | *(empty)* | Leave blank so Claude, Cursor, and Pi each register |
 | `anthropic_api_key` | — | Claude Code **API/Console** key (API billing, not Pro usage) |
-| `claude_code_oauth_token` | — | Claude Code **Pro/Max** OAuth token from `claude setup-token` |
-| `cursor_api_key` | — | Cursor Agent API key (Cursor plan) |
+| `claude_code_oauth_token` | — | Claude Code **Pro/Max** OAuth token from `claude setup-token` (daemon only) |
+| `cursor_api_key` | — | Cursor personal user API key (daemon + My Machines worker) |
 | `openrouter_api_key` | — | Pi → OpenRouter |
 | `openrouter_model` | `anthropic/claude-sonnet-4` | Default Pi model on OpenRouter |
 | `max_concurrent_tasks` | `2` | Concurrency |
+| `auto_stop_minutes` | `0` | Turn the whole add-on off this many minutes after start. `0` leaves it running |
 | `auto_stop_minutes` | `0` | Stop the add-on this many minutes after start. `0` leaves it running |
 
-## Access boundary
+Upgrading from 0.3.x with a blank `device_name`: the Multica computer is renamed `HA Agent Host (RW)`. Delete the stale `HA Config (read-write)` entry in Multica.
 
-`/config` is read-write. `/workspace` is also available as a writable agent scratch dir.
+- **Claude Pro/Max:** leave `anthropic_api_key` empty and set `claude_code_oauth_token`. See [authentication](https://code.claude.com/docs/en/authentication).
+- **Claude API billing:** set `anthropic_api_key` instead. The add-on prefers OAuth when both are filled.
+- **Pi / OpenRouter:** set `openrouter_api_key`. This writes `~/.pi/agent/auth.json` and the default provider settings.
 
 ## Auto-stop
 
-The option defaults to `0`, which leaves the add-on on. On the read-write add-on, set it to `30` so that container turns off 30 minutes after each start. Any positive number uses that window instead. When the window ends, the add-on asks Supervisor to stop it. That is a requested stop, so the add-on stays off — including when Watchdog is on — until you start it again. Starting it opens a new window. In-progress agent tasks are interrupted at stop.
+`auto_stop_minutes` defaults to `0`, which leaves the add-on on. Set it to `30` to turn the add-on off 30 minutes after each start; any positive number uses that window instead. The window covers the **whole add-on**, so it applies even when Multica isn't configured. When it ends, the add-on asks Supervisor to stop it, which also ends Remote Control sessions and the Cursor worker. That is a requested stop, so the add-on stays off (even with Watchdog on) until you start it again, and starting it opens a new window.
 
-The read-only add-on has no such option.
+## Access boundary
 
-## Status sensor
+| Path | Access |
+|------|--------|
+| `/config`, `/share`, `/media` | **read-write**: Remote Control sessions edit your live HA config |
+| `/ssl` | read-only |
+| `/workspace` → `/data/workspace` | read-write scratch |
 
-On boot the add-on posts lifecycle state to `sensor.multica_daemon_rw_status`:
+## Status sensors
 
-| State | Meaning |
-|-------|---------|
-| `starting` | Setup began |
-| `authenticated` | Multica login / stored credentials OK |
-| `ready` | About to start the daemon (setup finished) |
-| `error` | Permanent config/auth failure, or auto-stop could not reach Supervisor |
-| `stopped` | Auto-stop fired and Supervisor was asked to stop the add-on |
+| Entity | States |
+|--------|--------|
+| `sensor.multica_daemon_rw_status` | `starting` → `authenticated` → `ready` / `error` / `disabled`, and `stopped` after auto-stop |
+| `sensor.claude_remote_control_rw_status` | `waiting_for_login` → `ready` / `error` / `disabled` |
+| `sensor.cursor_worker_rw_status` | `ready` / `error` / `disabled` |
 
-Use this for dashboard colors (e.g. yellow while `starting`/`authenticated`, green on `ready`).
+A useful automation: notify when `sensor.claude_remote_control_rw_status` becomes `waiting_for_login`. That means the claude.ai login expired and needs the panel again.
 
 ## Runtimes & updates
 
-Image seeds Claude Code, Cursor Agent (`cursor-agent`), and Pi. On every container start, after credentials succeed and before the daemon launches, `update-agent-tools` tries once to refresh Multica and those CLIs. Copies live on `/data`. If the image binary is newer, that one is kept, so a failed download cannot hide it. The pass is capped at 25 minutes (`BOOT_UPDATE_BUDGET_SECONDS`). A daemon crash does not run it again until the container restarts. While it runs, the status sensor says `starting` / `Updating agent CLIs`.
-
-## Plan / provider login
-
-- **Claude Pro/Max (subscription usage):** leave `anthropic_api_key` empty; set `claude_code_oauth_token` from `claude setup-token` on a machine with a browser (see [authentication](https://code.claude.com/docs/en/authentication)).
-- **Claude API billing:** set `anthropic_api_key` instead (the add-on prefers OAuth when the token option is filled).
-- **Claude interactive:** leave both blank and login once under `/data/.claude` from a shell.
-- **Cursor:** set `cursor_api_key` from Cursor dashboard.
-- **Pi / OpenRouter:** set `openrouter_api_key`.
+The image seeds Multica, Claude Code, Cursor Agent and Pi. Once per container start, the add-on tries to update them onto `/data`. If the image copy is newer it is kept, and a failed download falls back to what is already on disk. The update runs whether or not Multica is configured. Remote Control and the Cursor worker start in parallel, so on a first boot they may run the image's CLI version until the next restart.

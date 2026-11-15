@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Derive an environment name that always shows the add-on's access mode.
+#
+#   agent-host-name display [VALUE]  ->  "HA Agent Host (RO)" / "Kitchen (RO)"
+#   agent-host-name slug    [VALUE]  ->  "ha-agent-host-ro"   / "kitchen-ro"
+#
+# Blank VALUE gives the default. A user VALUE keeps its text and gets the
+# mode appended unless it already names it: RO/RW as a whole word, or
+# read-only/read-write (case-insensitive). The slug form is lowercase
+# [a-z0-9-] so it is safe for Cursor `worker=<name>` triggers.
+# Mode comes from AGENT_HOST_MODE_LABEL (RO|RW), else MULTICA_ACCESS_MODE.
+set -euo pipefail
+
+kind="${1:-display}"
+value="${2:-}"
+
+label="${AGENT_HOST_MODE_LABEL:-}"
+if [[ -z "${label}" ]]; then
+  if [[ "${MULTICA_ACCESS_MODE:-rw}" == "ro" ]]; then label=RO; else label=RW; fi
+fi
+label="$(printf '%s' "${label}" | tr '[:lower:]' '[:upper:]')"
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+label_lc="$(lower "${label}")"
+if [[ "${label_lc}" == "ro" ]]; then long="read-only"; else long="read-write"; fi
+
+# Trim surrounding whitespace.
+value="${value#"${value%%[![:space:]]*}"}"
+value="${value%"${value##*[![:space:]]}"}"
+
+names_mode() {
+  local v re
+  v="$(lower "$1")"
+  re="(^|[^a-z0-9])${label_lc}([^a-z0-9]|$)"
+  [[ "${v}" =~ ${re} ]] || [[ "${v}" == *"${long}"* ]]
+}
+
+case "${kind}" in
+  display)
+    if [[ -z "${value}" ]]; then
+      printf 'HA Agent Host (%s)\n' "${label}"
+    elif names_mode "${value}"; then
+      printf '%s\n' "${value}"
+    else
+      printf '%s (%s)\n' "${value}" "${label}"
+    fi
+    ;;
+  slug)
+    slug="$(lower "${value:-ha-agent-host}" \
+      | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')"
+    slug="${slug:-ha-agent-host}"
+    if names_mode "${slug}"; then
+      printf '%s\n' "${slug}"
+    else
+      printf '%s-%s\n' "${slug}" "${label_lc}"
+    fi
+    ;;
+  *)
+    echo "usage: agent-host-name display|slug [value]" >&2
+    exit 2
+    ;;
+esac

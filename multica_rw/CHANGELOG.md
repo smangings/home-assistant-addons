@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0
+
+- Renamed to **Agent Host (read-write)**. The slug (`multica_rw`), options and `/data` are unchanged, so this installs as a normal update
+- **Claude Code Remote Control**: new s6 service. This add-on appears at claude.ai/code as `HA Agent Host (RW)`, and sessions start in `/config` (read-write)
+  - Uses its own HOME (`/data/remote-control`) and an env scrubbed of `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY`, so the daemon's tokens never override the claude.ai login
+  - Pre-seeds workspace trust and the "Enable Remote Control?" prompt, and writes a user `CLAUDE.md` describing the RW boundary
+  - Status sensor `sensor.claude_remote_control_rw_status` (`waiting_for_login` → `ready` / `error` / `disabled`)
+- **Agent Host RW sidebar panel**: ingress web terminal (ttyd 1.7.7 + tmux) with a guided `claude-rc-login`. nginx admits only the Supervisor ingress proxy
+- **Cursor My Machines worker** (opt-in `cursor_worker`): registers `/config` and `/workspace/*` git checkouts and restarts when checkouts change. Runs with a scrubbed env that holds only the Cursor key. Sensor `sensor.cursor_worker_rw_status`
+- Environment names always carry the mode: blank defaults are `HA Agent Host (RW)` / `ha-agent-host-rw`, and custom names get `(RW)`/`-rw` appended when missing
+  - **Multica:** if `device_name` was blank, the computer is now named `HA Agent Host (RW)`. Delete the stale `HA Config (read-write)` entry in Multica
+- `multica_token` is now optional. Without it the daemon stays parked and the other services keep running
+- Fix: s6 finish scripts now use exit 125 for "do not restart". Exit 1 restarted the service, so config/auth failures (exit 78) looped
+- Fix: `multica auth status` exits 0 when unauthenticated; its output is now checked, so a missing token no longer crash-loops the daemon
+- Fix: `/workspace` is now really persisted in `/data/workspace`. `WORKDIR /workspace` had baked a real directory into the image, so the symlink was never created. Anything in `/workspace` on a 0.3.x container lived in the container layer
+- The boot CLI update also runs when the daemon is parked, so Remote Control and the Cursor worker get current CLIs
+- `auto_stop_minutes` now covers the whole add-on: it is armed even without a Multica token, and the stop also ends Remote Control and Cursor worker sessions
+- Claude Code baseline 2.1.318 → 2.1.325
+
 ## 0.3.12
 
 - On boot, try to update Multica, Claude, Cursor, and Pi before the daemon starts, and keep the copies on `/data`

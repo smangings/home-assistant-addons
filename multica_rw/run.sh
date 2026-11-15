@@ -6,7 +6,6 @@ readonly EX_CONFIG=78
 
 OPTIONS_FILE="${MULTICA_OPTIONS_FILE:-/data/options.json}"
 ACCESS_MODE="${MULTICA_ACCESS_MODE:-rw}"
-DEFAULT_DEVICE_NAME="${MULTICA_DEFAULT_DEVICE_NAME:-Home Assistant}"
 DEFAULT_RUNTIME_NAME="${MULTICA_DEFAULT_RUNTIME_NAME:-}"
 
 # Export early so ha-publish-status / die_config hit the correct entity id.
@@ -69,13 +68,21 @@ option_or_default() {
   fi
 }
 
+# `multica auth status` exits 0 even when it prints "Not authenticated"
+# (multica 0.4.15), so the exit code alone cannot be trusted.
+multica_has_stored_credentials() {
+  local out
+  out="$(multica auth status 2>&1)" || return 1
+  ! grep -qi 'not authenticated' <<<"${out}"
+}
+
 ensure_workspace() {
+  # cont-init 50-workspace owns the migration; this only repairs a missing link.
   mkdir -p /data/workspace
-  if [[ ! -e /workspace ]]; then
-    ln -s /data/workspace /workspace
-  elif [[ -L /workspace ]]; then
+  if [[ ! -e /workspace || -L /workspace ]]; then
     ln -sfn /data/workspace /workspace
   fi
+  [[ -L /workspace ]] || log warning "/workspace is not linked to /data/workspace — contents will not persist"
 }
 
 write_agent_context() {
@@ -142,7 +149,9 @@ ha-api GET /states
 
 Filesystem mode is \`${ACCESS_MODE}\`. \`ha-api\` blocks non-GET when RO; \`SUPERVISOR_TOKEN\` still allows Core API calls via raw curl.
 
-This add-on publishes lifecycle status to \`sensor.multica_daemon_${ACCESS_MODE}_status\` (\`starting\` → \`authenticated\` → \`ready\` / \`error\`) via \`ha-publish-status\`.
+This add-on publishes lifecycle status to \`sensor.multica_daemon_${ACCESS_MODE}_status\` (\`starting\` → \`authenticated\` → \`ready\` / \`error\` / \`disabled\`) via \`ha-publish-status\`.
+
+Claude Code Remote Control runs beside the daemon as its own service with a separate HOME (\`/data/remote-control\`); do not reuse its login here.
 ${auto_stop_section}
 Environment: \`HA_URL\`, \`HA_TOKEN\`/\`SUPERVISOR_TOKEN\`, \`MULTICA_ACCESS_MODE\`, \`MULTICA_HA_CONFIG=/config\`, \`MULTICA_WORKSPACE=/workspace\`
 EOF
@@ -288,6 +297,7 @@ stop_leftover_auto_stop() {
   fi
 }
 
+AUTO_STOP_TIMER_PID=""
 start_write_access_auto_stop() {
   local minutes seconds timer_pid
   if [[ "${ACCESS_MODE}" != "rw" ]]; then
@@ -305,8 +315,29 @@ start_write_access_auto_stop() {
   log info "Write access auto-stop in ${minutes} minutes"
   auto_stop_after "${minutes}" "${seconds}" &
   timer_pid=$!
+  AUTO_STOP_TIMER_PID="${timer_pid}"
   mkdir -p "$(dirname "${AUTO_STOP_PIDFILE}")"
   printf '%s\n' "${timer_pid}" >"${AUTO_STOP_PIDFILE}"
+}
+
+# /run is cleared when the container stops, and kept when s6 restarts this
+# service after a daemon crash. One update pass per container start. Also runs
+# when the daemon is parked (no multica_token): Remote Control and the Cursor
+# worker use the same /data CLIs and would otherwise never be refreshed.
+run_boot_update() {
+  if [[ -e /run/boot-update.done ]]; then
+    log info "Skipping harness update; this container already ran it"
+    return 0
+  fi
+  publish_status starting "Updating agent CLIs"
+  log info "Updating Multica, Claude, Cursor, and Pi"
+  if [[ -x /usr/bin/update-agent-tools ]]; then
+    /usr/bin/update-agent-tools || log warning "agent CLI update failed; starting with the copies already on disk"
+  else
+    log warning "update-agent-tools missing; starting with image CLIs"
+  fi
+  touch /run/boot-update.done || log warning "could not record boot update marker"
+  hash -r || true
 }
 
 # Tests source this file with MULTICA_RUN_LIB=1 and stop before boot.
@@ -332,7 +363,8 @@ MULTICA_TOKEN="$(option multica_token "")"
 SERVER_URL="$(option server_url "https://api.multica.ai")"
 APP_URL="$(option app_url "https://multica.ai")"
 WORKSPACE_ID="$(option workspace_id "")"
-DEVICE_NAME="$(option_or_default device_name "${DEFAULT_DEVICE_NAME}")"
+# Always carries the access mode (e.g. "HA Agent Host (RO)") — see agent-host-name.
+DEVICE_NAME="$(agent-host-name display "$(option device_name "")")"
 RUNTIME_NAME="$(option_or_default runtime_name "${DEFAULT_RUNTIME_NAME}")"
 MAX_TASKS="$(option max_concurrent_tasks "2")"
 
@@ -385,10 +417,24 @@ if [[ -n "${MULTICA_TOKEN}" ]]; then
   if ! multica login --token "${MULTICA_TOKEN}"; then
     die_config "multica login failed — check the Multica token option"
   fi
-elif multica auth status >/dev/null 2>&1; then
+elif multica_has_stored_credentials; then
   log info "Using existing Multica credentials stored in /data"
 else
-  die_config "No Multica credentials. Set the 'multica_token' add-on option (Settings → API Tokens on Multica)."
+  # Multica is optional in Agent Host: park the daemon (finish maps exit 0 to
+  # "do not restart") and leave Remote Control / Cursor worker running.
+  log info "No multica_token and no stored Multica credentials — Multica daemon not started (set multica_token to enable it)"
+  # The write-access window applies to the whole add-on (Remote Control and
+  # the Cursor worker can edit /config too), not only to the daemon. Arm it
+  # before the (slow) CLI update, and keep this script alive as the timer's
+  # parent so the add-on still turns itself off.
+  start_write_access_auto_stop
+  run_boot_update
+  publish_status disabled "No multica_token configured"
+  if [[ -n "${AUTO_STOP_TIMER_PID}" ]]; then
+    log info "Multica parked; write-access auto-stop timer still armed"
+    wait "${AUTO_STOP_TIMER_PID}" || true
+  fi
+  exit 0
 fi
 
 publish_status authenticated "Multica credentials OK"
@@ -398,21 +444,10 @@ if [[ -n "${WORKSPACE_ID}" ]]; then
     log warning "Could not switch workspace to ${WORKSPACE_ID}"
 fi
 
-# /run is cleared when the container stops, and kept when s6 restarts this
-# service after a daemon crash. One update pass per container start.
-if [[ -e /run/boot-update.done ]]; then
-  log info "Skipping harness update; this container already ran it"
-else
-  publish_status starting "Updating agent CLIs"
-  log info "Updating Multica, Claude, Cursor, and Pi before the daemon starts"
-  if [[ -x /usr/bin/update-agent-tools ]]; then
-    /usr/bin/update-agent-tools || log warning "agent CLI update failed; starting with the copies already on disk"
-  else
-    log warning "update-agent-tools missing; starting with image CLIs"
-  fi
-  touch /run/boot-update.done || log warning "could not record boot update marker"
-  hash -r || true
-fi
+# Arm before the CLI update (up to ~25 min): Remote Control already has write
+# access from container start, so the window counts from here.
+start_write_access_auto_stop
+run_boot_update
 
 for tool in claude cursor-agent pi; do
   if command -v "${tool}" >/dev/null; then
@@ -433,7 +468,6 @@ fi
 
 log info "Starting Multica daemon (access=${ACCESS_MODE}, device=${DEVICE_NAME})"
 log info "HA config: /config (${ACCESS_MODE}) | agent workspace: /workspace (rw) | HA API: ${HA_URL}"
-start_write_access_auto_stop
 # Best “setup finished” signal from bash alone — true heartbeat readiness would
 # need a hook inside the daemon after exec.
 publish_status ready "Starting Multica daemon"

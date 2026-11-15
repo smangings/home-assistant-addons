@@ -1,15 +1,5 @@
-# Multica Daemon (read-only)
+# Agent Host (read-only)
 
-Read-only HA `/config` (and share/media), plus a **writable** `/workspace` for Multica agent workdirs.
+Claude Code Remote Control (`HA Agent Host (RO)` at claude.ai/code), an optional Cursor My Machines worker (`ha-agent-host-ro`) and the Multica daemon. HA `/config` is mounted **read-only**; `/workspace` is writable.
 
-Ships **Claude Code**, **Cursor Agent**, and **Pi** (OpenRouter). On container start, the add-on tries to update Multica and those CLIs onto `/data` before the daemon launches.
-
-| Option | Purpose |
-|--------|---------|
-| `multica_token` | required |
-| `anthropic_api_key` | Claude plan/API |
-| `cursor_api_key` | Cursor plan (headless) |
-| `openrouter_api_key` | Pi → OpenRouter |
-| `device_name` | default `HA Config (read-only)` |
-
-Point Multica `local_directory` at `/workspace` on this daemon.
+Sign in once from the **Agent Host RO** sidebar panel. See the Documentation tab for options, sensors and the Cursor setup.

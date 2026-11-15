@@ -1,14 +1,26 @@
 #!/command/with-contenv bash
-# Writable Multica agent workspace (critical for the RO config mount variant).
+# Writable, persistent agent workspace: /workspace -> /data/workspace.
+# Critical for the RO config mount variant, Multica local_directory and
+# Cursor worker checkouts.
 mkdir -p /data/workspace
-# Prefer a stable /workspace path for local_directory resources.
-if [[ ! -e /workspace ]]; then
-  ln -s /data/workspace /workspace
-elif [[ -d /workspace && ! -L /workspace ]]; then
-  # If a real dir already exists, keep it and also ensure /data/workspace is usable.
-  :
-else
+chmod 0755 /data/workspace
+
+if [[ -d /workspace && ! -L /workspace ]]; then
+  # Images up to 0.3.x set `WORKDIR /workspace`, which baked a real (ephemeral)
+  # directory into the image, so the symlink below was never created and
+  # /workspace contents were lost on every container recreate. Move anything
+  # there into /data, then replace the directory with the symlink.
+  shopt -s dotglob nullglob
+  for entry in /workspace/*; do
+    mv -n "${entry}" /data/workspace/ 2>/dev/null \
+      || echo "[workspace] warning: could not move ${entry} into /data/workspace"
+  done
+  shopt -u dotglob nullglob
+  rmdir /workspace 2>/dev/null \
+    || echo "[workspace] warning: /workspace not empty; leaving it as a real directory"
+fi
+
+if [[ ! -e /workspace || -L /workspace ]]; then
   ln -sfn /data/workspace /workspace
 fi
-chmod 0755 /data/workspace
-echo "[workspace] writable agent workspace ready at /workspace -> /data/workspace"
+echo "[workspace] $( [[ -L /workspace ]] && echo "persistent /workspace -> /data/workspace" || echo "WARNING: /workspace is not persistent")"

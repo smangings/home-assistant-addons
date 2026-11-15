@@ -1,7 +1,28 @@
 configuration:
+  remote_control:
+    name: Claude Remote Control
+    description: Run Claude Code Remote Control so this add-on appears as "HA Agent Host (RW)" at claude.ai/code. Sign in once from the Agent Host RW sidebar panel.
+  remote_control_name:
+    name: Remote Control name
+    description: Environment name at claude.ai/code. Blank = "HA Agent Host (RW)". "(RW)" is appended if the name does not already say RW/read-write.
+  remote_control_directory:
+    name: Remote Control directory
+    description: Directory Remote Control sessions start in (default /config — read-write in this add-on).
+  remote_control_permission_mode:
+    name: Remote Control permission mode
+    description: Permission mode for Remote Control sessions. "default" asks for approval in claude.ai/code before edits and commands.
+  cursor_worker:
+    name: Cursor My Machines worker
+    description: Run `agent worker start` so this add-on appears under Cursor My Machines. Needs cursor_api_key to be a personal user API key.
+  cursor_worker_name:
+    name: Cursor worker name
+    description: Machine name in Cursor (used by worker=<name> triggers). Blank = "ha-agent-host-rw"; "-rw" is appended if missing.
+  cursor_worker_dirs:
+    name: Cursor worker directories
+    description: Colon-separated git checkouts to register. Blank = /config (if it has a git remote) plus each /workspace/* checkout with a remote.
   multica_token:
     name: Multica token
-    description: Required personal access token (mul_…) from Multica Settings → API Tokens
+    description: Personal access token (mul_…) from Multica Settings → API Tokens. Leave blank to run without the Multica daemon.
   server_url:
     name: Server URL
     description: Multica API base URL
@@ -13,7 +34,7 @@ configuration:
     description: Optional workspace to select after login
   device_name:
     name: Device name
-    description: Multica daemon/computer name. Leave blank for HA Config (read-write).
+    description: Multica computer name. Blank = "HA Agent Host (RW)"; "(RW)" is appended if missing.
   runtime_name:
     name: Runtime name
     description: Leave blank so Claude, Cursor, and Pi each register as separate runtimes.
@@ -25,7 +46,7 @@ configuration:
     description: Pro/Max subscription token from `claude setup-token` (preferred for subscription usage)
   cursor_api_key:
     name: Cursor API key
-    description: Cursor Agent API key for headless plan authentication
+    description: Cursor personal user API key — headless Cursor Agent auth and the My Machines worker
   openrouter_api_key:
     name: OpenRouter API key
     description: API key so the Pi agent can call OpenRouter models

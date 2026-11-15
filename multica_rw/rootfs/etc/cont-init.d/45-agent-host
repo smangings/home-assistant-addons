@@ -1,0 +1,6 @@
+#!/command/with-contenv bash
+# Fresh lifecycle markers each boot (s6 backoff / disabled / reload flags).
+rm -rf /run/agent-host
+mkdir -p /run/agent-host /data/remote-control /data/cursor-worker
+chmod 0700 /data/remote-control /data/cursor-worker
+echo "[agent-host] runtime dirs ready (mode=${AGENT_HOST_MODE_LABEL:-?})"

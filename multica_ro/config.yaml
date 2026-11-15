@@ -1,10 +1,10 @@
-name: Multica Daemon (read-only)
-version: "0.3.12"
+name: Agent Host (read-only)
+version: "0.4.0"
 slug: multica_ro
 description: >-
-  Multica agent daemon with read-only Home Assistant config/share/media mounts,
-  a writable /workspace for agent workdirs, and Claude + Cursor + Pi runtimes
-  (OpenRouter for Pi).
+  Agent Host (read-only): Claude Code Remote Control, an optional Cursor My
+  Machines worker and the Multica daemon, with read-only Home Assistant
+  config/share/media mounts and a writable /workspace.
 url: https://github.com/smangings/home-assistant-addons/tree/main/multica_ro
 arch:
   - aarch64
@@ -16,6 +16,12 @@ boot: auto
 hassio_api: true
 hassio_role: default
 homeassistant_api: true
+# Web terminal (sign-in for Remote Control). nginx admits only the ingress proxy.
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:robot-outline
+panel_title: Agent Host RO
+panel_admin: true
 map:
   - type: homeassistant_config
     read_only: true
@@ -27,7 +33,14 @@ map:
   - type: media
     read_only: true
 options:
-  multica_token: null
+  remote_control: true
+  remote_control_name: ""
+  remote_control_directory: "/config"
+  remote_control_permission_mode: "default"
+  cursor_worker: false
+  cursor_worker_name: ""
+  cursor_worker_dirs: ""
+  multica_token: ""
   server_url: "https://api.multica.ai"
   app_url: "https://multica.ai"
   workspace_id: ""
@@ -40,7 +53,14 @@ options:
   openrouter_model: "anthropic/claude-sonnet-4"
   max_concurrent_tasks: 2
 schema:
-  multica_token: password
+  remote_control: bool
+  remote_control_name: str?
+  remote_control_directory: str?
+  remote_control_permission_mode: list(default|acceptEdits|plan|auto|bypassPermissions)
+  cursor_worker: bool
+  cursor_worker_name: str?
+  cursor_worker_dirs: str?
+  multica_token: password?
   server_url: url
   app_url: url
   workspace_id: str?
