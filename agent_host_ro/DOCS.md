@@ -66,11 +66,35 @@ Cursor routes a repo request by git remote. By default the worker registers `/co
 | `pi_openrouter_model` | `anthropic/claude-sonnet-4` | Default Pi model on OpenRouter |
 | `multica_max_concurrent_tasks` | `2` | Concurrency |
 
-Upgrading from 0.3.x with a blank `multica_device_name`: the Multica computer is renamed `HA Agent Host (RO)`. Delete the stale `HA Config (read-only)` entry in Multica.
 
 - **Claude Pro/Max:** leave `claude_api_key` empty and set `claude_code_oauth_token`. See [authentication](https://code.claude.com/docs/en/authentication).
 - **Claude API billing:** set `claude_api_key` instead. The add-on prefers OAuth when both are filled.
 - **Pi / OpenRouter:** set `pi_openrouter_api_key`. This writes `~/.pi/agent/auth.json` and the default provider settings.
+
+## Moving from Multica Daemon (read-only)
+
+This add-on replaces **Multica Daemon (read-only)** under a new slug (`agent_host_ro`, was `multica_ro`). Home Assistant treats it as a separate add-on, so nothing carries over automatically.
+
+1. Copy anything you need out of the old add-on's `/workspace`.
+2. Install **Agent Host (read-only)** and enter your options using the table below.
+3. Start it and sign in to Remote Control from the **Agent Host RO** panel.
+4. Uninstall **Multica Daemon (read-only)**.
+5. In Multica, delete the old `HA Config (read-only)` computer; this add-on registers as `HA Agent Host (RO)`.
+
+| Old option (`multica_ro`) | New option |
+|---|---|
+| `anthropic_api_key` | `claude_api_key` |
+| `claude_code_oauth_token` | `claude_code_oauth_token` |
+| `cursor_api_key` | `cursor_api_key` |
+| `multica_token` | `multica_token` |
+| `server_url` | `multica_server_url` |
+| `app_url` | `multica_app_url` |
+| `workspace_id` | `multica_workspace_id` |
+| `device_name` | `multica_device_name` |
+| `runtime_name` | `multica_runtime_name` |
+| `max_concurrent_tasks` | `multica_max_concurrent_tasks` |
+| `openrouter_api_key` | `pi_openrouter_api_key` |
+| `openrouter_model` | `pi_openrouter_model` |
 
 ## Access boundary
 

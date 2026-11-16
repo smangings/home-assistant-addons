@@ -1,11 +1,12 @@
-name: Agent Host (read-only)
+name: Agent Host (read-write)
 version: "0.4.0"
-slug: multica_ro
+slug: agent_host_rw
 description: >-
-  Agent Host (read-only): Claude Code Remote Control, an optional Cursor My
-  Machines worker and the Multica daemon, with read-only Home Assistant
-  config/share/media mounts and a writable /workspace.
-url: https://github.com/smangings/home-assistant-addons/tree/main/multica_ro
+  Agent Host (read-write): Claude Code Remote Control, an optional Cursor My
+  Machines worker and the Multica daemon, with read-write Home Assistant
+  config/share/media mounts. Set auto_stop_minutes to turn the whole add-on
+  (Remote Control included) off that many minutes after start.
+url: https://github.com/smangings/home-assistant-addons/tree/main/agent_host_rw
 arch:
   - aarch64
   - amd64
@@ -20,18 +21,18 @@ homeassistant_api: true
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:robot-outline
-panel_title: Agent Host RO
+panel_title: Agent Host RW
 panel_admin: true
 map:
   - type: homeassistant_config
-    read_only: true
+    read_only: false
     path: /config
   - type: share
-    read_only: true
+    read_only: false
   - type: ssl
     read_only: true
   - type: media
-    read_only: true
+    read_only: false
 options:
   claude_remote_control: true
   claude_remote_control_name: ""
@@ -52,6 +53,7 @@ options:
   multica_max_concurrent_tasks: 2
   pi_openrouter_api_key: ""
   pi_openrouter_model: "anthropic/claude-sonnet-4"
+  auto_stop_minutes: 0
 schema:
   claude_remote_control: bool
   claude_remote_control_name: str?
@@ -72,3 +74,4 @@ schema:
   multica_max_concurrent_tasks: int(1,20)
   pi_openrouter_api_key: password?
   pi_openrouter_model: str?
+  auto_stop_minutes: int(0,1440)

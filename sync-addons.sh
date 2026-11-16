@@ -32,5 +32,5 @@ sync_addon() {
   echo "synced ${dest}"
 }
 
-sync_addon "${ROOT}/multica_ro"
-sync_addon "${ROOT}/multica_rw"
+sync_addon "${ROOT}/agent_host_ro"
+sync_addon "${ROOT}/agent_host_rw"

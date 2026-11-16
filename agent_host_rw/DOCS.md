@@ -68,7 +68,6 @@ Cursor routes a repo request by git remote. By default the worker registers `/co
 | `auto_stop_minutes` | `0` | Turn the whole add-on off this many minutes after start. `0` leaves it running |
 | `auto_stop_minutes` | `0` | Stop the add-on this many minutes after start. `0` leaves it running |
 
-Upgrading from 0.3.x with a blank `multica_device_name`: the Multica computer is renamed `HA Agent Host (RW)`. Delete the stale `HA Config (read-write)` entry in Multica.
 
 - **Claude Pro/Max:** leave `claude_api_key` empty and set `claude_code_oauth_token`. See [authentication](https://code.claude.com/docs/en/authentication).
 - **Claude API billing:** set `claude_api_key` instead. The add-on prefers OAuth when both are filled.
@@ -77,6 +76,32 @@ Upgrading from 0.3.x with a blank `multica_device_name`: the Multica computer is
 ## Auto-stop
 
 `auto_stop_minutes` defaults to `0`, which leaves the add-on on. Set it to `30` to turn the add-on off 30 minutes after each start; any positive number uses that window instead. The window covers the **whole add-on**, so it applies even when Multica isn't configured. When it ends, the add-on asks Supervisor to stop it, which also ends Remote Control sessions and the Cursor worker. That is a requested stop, so the add-on stays off (even with Watchdog on) until you start it again, and starting it opens a new window.
+
+## Moving from Multica Daemon (read-write)
+
+This add-on replaces **Multica Daemon (read-write)** under a new slug (`agent_host_rw`, was `multica_rw`). Home Assistant treats it as a separate add-on, so nothing carries over automatically.
+
+1. Copy anything you need out of the old add-on's `/workspace`.
+2. Install **Agent Host (read-write)** and enter your options using the table below.
+3. Start it and sign in to Remote Control from the **Agent Host RW** panel.
+4. Uninstall **Multica Daemon (read-write)**.
+5. In Multica, delete the old `HA Config (read-write)` computer; this add-on registers as `HA Agent Host (RW)`.
+
+| Old option (`multica_rw`) | New option |
+|---|---|
+| `anthropic_api_key` | `claude_api_key` |
+| `claude_code_oauth_token` | `claude_code_oauth_token` |
+| `cursor_api_key` | `cursor_api_key` |
+| `multica_token` | `multica_token` |
+| `server_url` | `multica_server_url` |
+| `app_url` | `multica_app_url` |
+| `workspace_id` | `multica_workspace_id` |
+| `device_name` | `multica_device_name` |
+| `runtime_name` | `multica_runtime_name` |
+| `max_concurrent_tasks` | `multica_max_concurrent_tasks` |
+| `openrouter_api_key` | `pi_openrouter_api_key` |
+| `openrouter_model` | `pi_openrouter_model` |
+| `auto_stop_minutes` | `auto_stop_minutes` |
 
 ## Access boundary
 

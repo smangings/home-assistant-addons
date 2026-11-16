@@ -77,7 +77,7 @@ multica_has_stored_credentials() {
 }
 
 ensure_workspace() {
-  # cont-init 50-workspace owns the migration; this only repairs a missing link.
+  # cont-init 50-workspace creates the link; this only repairs a missing one.
   mkdir -p /data/workspace
   if [[ ! -e /workspace || -L /workspace ]]; then
     ln -sfn /data/workspace /workspace

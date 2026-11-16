@@ -11,7 +11,9 @@ Two **Agent Host** add-ons with real filesystem boundaries. Each one is a remote
 | **Agent Host (read-only)** | read-only | `HA Agent Host (RO)` | `ha-agent-host-ro` | `HA Agent Host (RO)` |
 | **Agent Host (read-write)** | read-write | `HA Agent Host (RW)` | `ha-agent-host-rw` | `HA Agent Host (RW)` |
 
-Every environment name carries RO/RW, and custom names get the suffix added if it's missing. Slugs are still `multica_ro` / `multica_rw`, so 0.3.x installs update in place.
+Every environment name carries RO/RW, and custom names get the suffix added if it's missing.
+
+These replace the **Multica Daemon** add-ons (`multica_ro` / `multica_rw`). The slugs are now `agent_host_ro` / `agent_host_rw`, so they install as new add-ons: re-enter options, sign in, then uninstall the old ones. Each add-on's docs have an old-to-new option table.
 
 `auto_stop_minutes` (RW only) defaults to `0`, always on. Set it to `30` to turn the read-write add-on off 30 minutes after each start; that also ends its Remote Control sessions.
 
@@ -31,5 +33,5 @@ Status sensors: `sensor.claude_remote_control_{ro,rw}_status`, `sensor.cursor_wo
 `shared/` holds everything both add-ons have in common: the Dockerfile, `run.sh` and `rootfs/`. Per-variant files are `config.yaml`, `Dockerfile.overlay` (the mode ENV, including `AGENT_HOST_MODE_LABEL`), `DOCS.md`, `CHANGELOG.md` and `translations/`.
 
 ```bash
-./sync-addons.sh   # copy shared/ into multica_ro/ and multica_rw/
+./sync-addons.sh   # copy shared/ into agent_host_ro/ and agent_host_rw/
 ```
