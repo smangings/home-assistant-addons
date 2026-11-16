@@ -9,12 +9,12 @@ rc_env
 
 label="$(ah_mode_label)"
 mode_lc="$(printf '%s' "${label}" | tr '[:upper:]' '[:lower:]')"
-rc_enabled=false; ah_bool remote_control true && rc_enabled=true
+rc_enabled=false; ah_bool claude_remote_control true && rc_enabled=true
 
 if [[ "${rc_enabled}" == true ]]; then
   if rc_login_ready; then rc_state="signed in"; else rc_state="NOT signed in"; fi
 else
-  rc_state="disabled (remote_control: false)"
+  rc_state="disabled (claude_remote_control: false)"
 fi
 if ah_bool cursor_worker false; then
   cw_state="enabled as $(agent-host-name slug "$(ah_option cursor_worker_name "")")"

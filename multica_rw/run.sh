@@ -135,7 +135,7 @@ This container runs Multica with Claude Code, Cursor Agent, and Pi CLIs.
 
 - \`claude\` — Claude Code (subscription/API via add-on options)
 - \`cursor-agent\` — Cursor Agent CLI (Cursor plan via \`cursor_api_key\`)
-- \`pi\` — Pi coding agent (OpenRouter via \`openrouter_api_key\`)
+- \`pi\` — Pi coding agent (OpenRouter via \`pi_openrouter_api_key\`)
 
 On container start, before the daemon launches, the add-on tries once to update Multica, Claude, Cursor, and Pi. Copies live on \`/data\`. If the image binary is newer, that one is kept. A failed download does not hide it, and the daemon still starts. A daemon crash does not run the update again until the container itself restarts.
 
@@ -159,11 +159,11 @@ EOF
 
 configure_provider_auth() {
   local anthropic_key cursor_key openrouter_key openrouter_model claude_oauth
-  anthropic_key="$(option anthropic_api_key "")"
+  anthropic_key="$(option claude_api_key "")"
   claude_oauth="$(option claude_code_oauth_token "")"
   cursor_key="$(option cursor_api_key "")"
-  openrouter_key="$(option openrouter_api_key "")"
-  openrouter_model="$(option openrouter_model "anthropic/claude-sonnet-4")"
+  openrouter_key="$(option pi_openrouter_api_key "")"
+  openrouter_model="$(option pi_openrouter_model "anthropic/claude-sonnet-4")"
 
   # Claude Code auth: API key bills Console/API usage; OAuth token uses Pro/Max
   # subscription limits. API key wins if both are set — prefer subscription when
@@ -173,7 +173,7 @@ configure_provider_auth() {
     unset ANTHROPIC_API_KEY || true
     unset ANTHROPIC_AUTH_TOKEN || true
     if [[ -n "${anthropic_key}" ]]; then
-      log warning "claude_code_oauth_token set — ignoring anthropic_api_key so Pro/Max subscription is used (API key would take precedence)"
+      log warning "claude_code_oauth_token set — ignoring claude_api_key so Pro/Max subscription is used (API key would take precedence)"
     else
       log info "CLAUDE_CODE_OAUTH_TOKEN set for Claude Code (Pro/Max subscription)"
     fi
@@ -201,7 +201,7 @@ configure_provider_auth() {
     chmod 600 /data/.pi/agent/auth.json
     log info "Pi configured for OpenRouter (model=${openrouter_model})"
   else
-    log info "No openrouter_api_key — Pi OpenRouter auth not configured"
+    log info "No pi_openrouter_api_key — Pi OpenRouter auth not configured"
   fi
 }
 
@@ -360,13 +360,13 @@ export MULTICA_ACCESS_MODE="${ACCESS_MODE}"
 publish_status starting "Bootstrapping Multica daemon"
 
 MULTICA_TOKEN="$(option multica_token "")"
-SERVER_URL="$(option server_url "https://api.multica.ai")"
-APP_URL="$(option app_url "https://multica.ai")"
-WORKSPACE_ID="$(option workspace_id "")"
+SERVER_URL="$(option multica_server_url "https://api.multica.ai")"
+APP_URL="$(option multica_app_url "https://multica.ai")"
+WORKSPACE_ID="$(option multica_workspace_id "")"
 # Always carries the access mode (e.g. "HA Agent Host (RO)") — see agent-host-name.
-DEVICE_NAME="$(agent-host-name display "$(option device_name "")")"
-RUNTIME_NAME="$(option_or_default runtime_name "${DEFAULT_RUNTIME_NAME}")"
-MAX_TASKS="$(option max_concurrent_tasks "2")"
+DEVICE_NAME="$(agent-host-name display "$(option multica_device_name "")")"
+RUNTIME_NAME="$(option_or_default multica_runtime_name "${DEFAULT_RUNTIME_NAME}")"
+MAX_TASKS="$(option multica_max_concurrent_tasks "2")"
 
 export MULTICA_DAEMON_DEVICE_NAME="${DEVICE_NAME}"
 export MULTICA_DAEMON_MAX_CONCURRENT_TASKS="${MAX_TASKS}"

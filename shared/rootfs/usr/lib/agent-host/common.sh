@@ -116,11 +116,11 @@ rc_env() {
   ah_ha_env
 }
 
-rc_name() { agent-host-name display "$(ah_option remote_control_name "")"; }
+rc_name() { agent-host-name display "$(ah_option claude_remote_control_name "")"; }
 
 rc_directory() {
   local dir
-  dir="$(ah_option remote_control_directory /config)"
+  dir="$(ah_option claude_remote_control_directory /config)"
   if [[ ! -d "${dir}" ]]; then
     dir=/workspace
   fi

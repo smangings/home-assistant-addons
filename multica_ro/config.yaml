@@ -33,42 +33,42 @@ map:
   - type: media
     read_only: true
 options:
-  remote_control: true
-  remote_control_name: ""
-  remote_control_directory: "/config"
-  remote_control_permission_mode: "default"
+  claude_remote_control: true
+  claude_remote_control_name: ""
+  claude_remote_control_directory: "/config"
+  claude_remote_control_permission_mode: "default"
+  claude_code_oauth_token: ""
+  claude_api_key: ""
+  cursor_api_key: ""
   cursor_worker: false
   cursor_worker_name: ""
   cursor_worker_dirs: ""
   multica_token: ""
-  server_url: "https://api.multica.ai"
-  app_url: "https://multica.ai"
-  workspace_id: ""
-  device_name: ""
-  runtime_name: ""
-  anthropic_api_key: ""
-  claude_code_oauth_token: ""
-  cursor_api_key: ""
-  openrouter_api_key: ""
-  openrouter_model: "anthropic/claude-sonnet-4"
-  max_concurrent_tasks: 2
+  multica_server_url: "https://api.multica.ai"
+  multica_app_url: "https://multica.ai"
+  multica_workspace_id: ""
+  multica_device_name: ""
+  multica_runtime_name: ""
+  multica_max_concurrent_tasks: 2
+  pi_openrouter_api_key: ""
+  pi_openrouter_model: "anthropic/claude-sonnet-4"
 schema:
-  remote_control: bool
-  remote_control_name: str?
-  remote_control_directory: str?
-  remote_control_permission_mode: list(default|acceptEdits|plan|auto|bypassPermissions)
+  claude_remote_control: bool
+  claude_remote_control_name: str?
+  claude_remote_control_directory: str?
+  claude_remote_control_permission_mode: list(default|acceptEdits|plan|auto|bypassPermissions)
+  claude_code_oauth_token: password?
+  claude_api_key: password?
+  cursor_api_key: password?
   cursor_worker: bool
   cursor_worker_name: str?
   cursor_worker_dirs: str?
   multica_token: password?
-  server_url: url
-  app_url: url
-  workspace_id: str?
-  device_name: str?
-  runtime_name: str?
-  anthropic_api_key: password?
-  claude_code_oauth_token: password?
-  cursor_api_key: password?
-  openrouter_api_key: password?
-  openrouter_model: str?
-  max_concurrent_tasks: int(1,20)
+  multica_server_url: url
+  multica_app_url: url
+  multica_workspace_id: str?
+  multica_device_name: str?
+  multica_runtime_name: str?
+  multica_max_concurrent_tasks: int(1,20)
+  pi_openrouter_api_key: password?
+  pi_openrouter_model: str?

@@ -1,0 +1,78 @@
+#!/command/with-contenv bash
+# One-time migration for option keys renamed in 0.4.0 (prefixed by the tool
+# that consumes them: claude_*, multica_*, pi_*).
+#
+# Supervisor drops keys that are no longer in the schema from
+# /data/options.json, but keeps the user's stored values. GET
+# /addons/self/info still returns them (raw, so `!secret` references
+# survive), so copy each old value to its new key, save through
+# POST /addons/self/options, then restart once so Supervisor writes a fresh
+# options.json with secrets resolved. Best effort: never blocks boot.
+set -uo pipefail
+
+log() { echo "[migrate-options] $*"; }
+
+MARKER=/data/.options-migrated-0.4.0
+API="${SUPERVISOR_API:-http://supervisor}"
+MAP='{
+  "anthropic_api_key":    "claude_api_key",
+  "server_url":           "multica_server_url",
+  "app_url":              "multica_app_url",
+  "workspace_id":         "multica_workspace_id",
+  "device_name":          "multica_device_name",
+  "runtime_name":         "multica_runtime_name",
+  "max_concurrent_tasks": "multica_max_concurrent_tasks",
+  "openrouter_api_key":   "pi_openrouter_api_key",
+  "openrouter_model":     "pi_openrouter_model"
+}'
+
+[[ -e "${MARKER}" ]] && exit 0
+if [[ -z "${SUPERVISOR_TOKEN:-}" ]]; then
+  log "SUPERVISOR_TOKEN not set; skipping"
+  exit 0
+fi
+
+sup() {
+  curl -fsS --max-time 20 -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" "$@"
+}
+
+if ! info="$(sup "${API}/addons/self/info")"; then
+  log "could not read add-on info; skipping (will retry next start)"
+  exit 0
+fi
+
+# Old keys still in Supervisor's stored options mean the user has not saved
+# options under 0.4.0 yet, so the new keys are still defaults: old wins.
+moved="$(jq -c --argjson map "${MAP}" '
+  (.data.options // {}) as $o
+  | [ $map | to_entries[] as $e
+      | select(($o | has($e.key)) and $o[$e.key] != null) | $e.key ]' \
+  <<<"${info}" 2>/dev/null || echo '[]')"
+
+if [[ "${moved}" == "[]" ]]; then
+  : >"${MARKER}"
+  exit 0
+fi
+
+body="$(jq -c --argjson map "${MAP}" '
+  (.data.options // {}) as $o
+  | reduce ($map | to_entries[]) as $e ($o;
+      if ($o | has($e.key)) and $o[$e.key] != null
+      then .[$e.value] = $o[$e.key] | del(.[$e.key])
+      else del(.[$e.key]) end)
+  | {options: .}' <<<"${info}")"
+
+log "renaming options $(jq -r 'join(", ")' <<<"${moved}") to their claude_/multica_/pi_ names"
+if ! out="$(sup -X POST -H "Content-Type: application/json" -d "${body}" "${API}/addons/self/options" 2>&1)"; then
+  log "could not save migrated options (${out}); keeping defaults this start, will retry next start"
+  exit 0
+fi
+: >"${MARKER}"
+
+# This container's options.json still lacks the new values; restart once so
+# Supervisor regenerates it. The marker prevents a second restart.
+log "migrated; restarting the add-on once to apply them"
+if ! sup -X POST "${API}/addons/self/restart" >/dev/null; then
+  log "warning: restart request failed; restart the add-on to apply the migrated options"
+fi
+exit 0

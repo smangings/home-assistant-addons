@@ -11,7 +11,7 @@ Every environment this add-on registers carries **RO** in its name, so you can t
 | Multica → Runtimes | `HA Agent Host (RO)` |
 | HA sidebar | `Agent Host RO` |
 
-Custom names (`remote_control_name`, `cursor_worker_name`, `device_name`) get ` (RO)` / `-ro` appended unless they already say RO or read-only.
+Custom names (`claude_remote_control_name`, `cursor_worker_name`, `multica_device_name`) get ` (RO)` / `-ro` appended unless they already say RO or read-only.
 
 ## Claude Code Remote Control
 
@@ -28,10 +28,10 @@ Use a Claude Pro/Max/Team/Enterprise account. The `claude_code_oauth_token` opti
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `remote_control` | `true` | Run Remote Control |
-| `remote_control_name` | `HA Agent Host (RO)` | Name at claude.ai/code |
-| `remote_control_directory` | `/config` | Where sessions start (falls back to `/workspace` if missing) |
-| `remote_control_permission_mode` | `default` | `default` asks for approval in the app. Other values: `acceptEdits`, `plan`, `auto`, `bypassPermissions` |
+| `claude_remote_control` | `true` | Run Remote Control |
+| `claude_remote_control_name` | `HA Agent Host (RO)` | Name at claude.ai/code |
+| `claude_remote_control_directory` | `/config` | Where sessions start (falls back to `/workspace` if missing) |
+| `claude_remote_control_permission_mode` | `default` | `default` asks for approval in the app. Other values: `acceptEdits`, `plan`, `auto`, `bypassPermissions` |
 
 Sessions get a user `CLAUDE.md` describing this add-on's RO boundary and the `ha-states` / `ha-history` / `ha-api` helpers.
 
@@ -56,21 +56,21 @@ Cursor routes a repo request by git remote. By default the worker registers `/co
 | Option | Default when blank | Description |
 |--------|--------------------|-------------|
 | `multica_token` | — | Multica PAT (`mul_…`). Blank = daemon not started |
-| `server_url` / `app_url` | Multica Cloud | Self-host override |
-| `device_name` | `HA Agent Host (RO)` | Computer name in Multica |
-| `runtime_name` | *(empty)* | Leave blank so Claude, Cursor, and Pi each register |
-| `anthropic_api_key` | — | Claude Code **API/Console** key (API billing, not Pro usage) |
+| `multica_server_url` / `multica_app_url` | Multica Cloud | Self-host override |
+| `multica_device_name` | `HA Agent Host (RO)` | Computer name in Multica |
+| `multica_runtime_name` | *(empty)* | Leave blank so Claude, Cursor, and Pi each register |
+| `claude_api_key` | — | Claude Code **API/Console** key (API billing, not Pro usage) |
 | `claude_code_oauth_token` | — | Claude Code **Pro/Max** OAuth token from `claude setup-token` (daemon only) |
 | `cursor_api_key` | — | Cursor personal user API key (daemon + My Machines worker) |
-| `openrouter_api_key` | — | Pi → OpenRouter |
-| `openrouter_model` | `anthropic/claude-sonnet-4` | Default Pi model on OpenRouter |
-| `max_concurrent_tasks` | `2` | Concurrency |
+| `pi_openrouter_api_key` | — | Pi → OpenRouter |
+| `pi_openrouter_model` | `anthropic/claude-sonnet-4` | Default Pi model on OpenRouter |
+| `multica_max_concurrent_tasks` | `2` | Concurrency |
 
-Upgrading from 0.3.x with a blank `device_name`: the Multica computer is renamed `HA Agent Host (RO)`. Delete the stale `HA Config (read-only)` entry in Multica.
+Upgrading from 0.3.x with a blank `multica_device_name`: the Multica computer is renamed `HA Agent Host (RO)`. Delete the stale `HA Config (read-only)` entry in Multica.
 
-- **Claude Pro/Max:** leave `anthropic_api_key` empty and set `claude_code_oauth_token`. See [authentication](https://code.claude.com/docs/en/authentication).
-- **Claude API billing:** set `anthropic_api_key` instead. The add-on prefers OAuth when both are filled.
-- **Pi / OpenRouter:** set `openrouter_api_key`. This writes `~/.pi/agent/auth.json` and the default provider settings.
+- **Claude Pro/Max:** leave `claude_api_key` empty and set `claude_code_oauth_token`. See [authentication](https://code.claude.com/docs/en/authentication).
+- **Claude API billing:** set `claude_api_key` instead. The add-on prefers OAuth when both are filled.
+- **Pi / OpenRouter:** set `pi_openrouter_api_key`. This writes `~/.pi/agent/auth.json` and the default provider settings.
 
 ## Access boundary
 

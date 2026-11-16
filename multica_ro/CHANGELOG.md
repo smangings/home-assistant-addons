@@ -2,6 +2,7 @@
 
 ## 0.4.0
 
+- **Options renamed by the tool that uses them**: `claude_*` (Claude Remote Control, `claude_api_key`), `multica_*` (`multica_server_url`, `multica_app_url`, `multica_workspace_id`, `multica_device_name`, `multica_runtime_name`, `multica_max_concurrent_tasks`) and `pi_*` (`pi_openrouter_api_key`, `pi_openrouter_model`). Your existing values are migrated on first start, and the add-on restarts once to apply them. `cursor_*`, `claude_code_oauth_token`, `multica_token` and `auto_stop_minutes` are unchanged
 - Renamed to **Agent Host (read-only)**. The slug (`multica_ro`), options and `/data` are unchanged, so this installs as a normal update
 - **Claude Code Remote Control**: new s6 service. This add-on appears at claude.ai/code as `HA Agent Host (RO)`, and sessions start in `/config` (read-only)
   - Uses its own HOME (`/data/remote-control`) and an env scrubbed of `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY`, so the daemon's tokens never override the claude.ai login
@@ -10,7 +11,7 @@
 - **Agent Host RO sidebar panel**: ingress web terminal (ttyd 1.7.7 + tmux) with a guided `claude-rc-login`. nginx admits only the Supervisor ingress proxy
 - **Cursor My Machines worker** (opt-in `cursor_worker`): registers `/config` and `/workspace/*` git checkouts and restarts when checkouts change. Runs with a scrubbed env that holds only the Cursor key. Sensor `sensor.cursor_worker_ro_status`
 - Environment names always carry the mode: blank defaults are `HA Agent Host (RO)` / `ha-agent-host-ro`, and custom names get `(RO)`/`-ro` appended when missing
-  - **Multica:** if `device_name` was blank, the computer is now named `HA Agent Host (RO)`. Delete the stale `HA Config (read-only)` entry in Multica
+  - **Multica:** if `multica_device_name` was blank, the computer is now named `HA Agent Host (RO)`. Delete the stale `HA Config (read-only)` entry in Multica
 - `multica_token` is now optional. Without it the daemon stays parked and the other services keep running
 - Fix: s6 finish scripts now use exit 125 for "do not restart". Exit 1 restarted the service, so config/auth failures (exit 78) looped
 - Fix: `multica auth status` exits 0 when unauthenticated; its output is now checked, so a missing token no longer crash-loops the daemon
