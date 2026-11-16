@@ -1,12 +1,15 @@
 #!/command/with-contenv bash
-# s6 longrun: Cursor "My Machines" worker (opt-in).
+# Cursor "My Machines" worker (opt-in).
 # https://cursor.com/docs/cloud-agent/self-hosted/my-machines
 #
 # Cursor's agent loop stays in Cursor's cloud; shell/file tools run here over
 # an outbound connection (no inbound port). Repos are routed by the git
 # remote of each --worker-dir, so the checkout set is re-scanned every
-# CURSOR_WORKER_DIR_POLL_SECONDS; on change this script exits with a reload
-# marker and s6 restarts it with the new --worker-dir list.
+# CURSOR_WORKER_DIR_POLL_SECONDS.
+#
+# Restart policy: disabled or no API key -> stay down; checkouts changed ->
+# restart immediately with the new --worker-dir list; worker exits -> restart
+# after 30s.
 set -uo pipefail
 # shellcheck source=/dev/null
 source /usr/lib/agent-host/common.sh
@@ -15,14 +18,13 @@ COMPONENT=cursor_worker
 POLL="${CURSOR_WORKER_DIR_POLL_SECONDS:-60}"
 log() { echo "[${SVC}] $*"; }
 
-ah_backoff "${SVC}" "${COMPONENT}" 30
 ah_ha_env
 
 disable() {
   local state="$1" message="$2"
   log "${message}"
   ah_publish "${COMPONENT}" "${state}" "${message}"
-  ah_mark "${SVC}" disabled
+  ah_stay_down "${SVC}"
   exit 0
 }
 
@@ -36,8 +38,8 @@ for candidate in /data/bin/agent /data/.local/bin/agent "$(command -v agent 2>/d
   if [[ -n "${candidate}" && -x "${candidate}" ]]; then agent_bin="${candidate}"; break; fi
 done
 if [[ -z "${agent_bin}" ]]; then
-  log "Cursor agent CLI not found; retrying"
-  exit 1
+  log "Cursor agent CLI not found"
+  ah_restart_after "${SVC}" "${COMPONENT}" 30 1
 fi
 
 has_remote() {
@@ -77,7 +79,7 @@ while IFS= read -r d; do
 done <<<"${dirs_key}"
 args+=(start --verbose)
 
-mkdir -p /data/cursor-worker
+mkdir -p /data/cursor-worker && chmod 0700 /data/cursor-worker
 cd /workspace || exit 1
 log "starting \"${name}\" (dirs=$(tr '\n' ' ' <<<"${dirs_key:-none}" | sed 's/ $//'), cwd=/workspace, $("${agent_bin}" --version 2>/dev/null | head -1))"
 
@@ -105,13 +107,10 @@ while true; do
   if ! kill -0 "${worker}" 2>/dev/null; then
     kill "${timer}" 2>/dev/null || true
     wait "${worker}"
-    rc=$?
-    log "worker exited (${rc})"
-    exit "${rc:-1}"
+    ah_restart_after "${SVC}" "${COMPONENT}" 30 $?
   fi
   if [[ "$(collect_dirs)" != "${dirs_key}" ]]; then
     log "checkouts changed; restarting with the new --worker-dir set"
-    ah_mark "${SVC}" reload
     kill "${timer}" 2>/dev/null || true
     kill -TERM "${worker}" 2>/dev/null || true
     wait "${worker}" 2>/dev/null || true

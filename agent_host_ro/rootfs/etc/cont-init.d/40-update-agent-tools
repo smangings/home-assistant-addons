@@ -1,4 +1,0 @@
-#!/command/with-contenv bash
-# Updates run from /run.sh before the daemon starts. Do not download here:
-# a hung install in cont-init never lets s6 finish, and Supervisor restarts the add-on.
-exit 0

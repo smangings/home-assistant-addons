@@ -12,7 +12,8 @@
 - **Cursor My Machines worker** (opt-in `cursor_worker`): registers `/config` and `/workspace/*` git checkouts and restarts when checkouts change. Runs with a scrubbed env that holds only the Cursor key. Sensor `sensor.cursor_worker_rw_status`
 - Environment names always carry the mode: blank defaults are `HA Agent Host (RW)` / `ha-agent-host-rw`, and custom names get `(RW)`/`-rw` appended when missing
 - `multica_token` is now optional. Without it the daemon stays parked and the other services keep running
-- Fix: s6 finish scripts now use exit 125 for "do not restart". Exit 1 restarted the service, so config/auth failures (exit 78) looped
+- Fix: config/auth failures (exit 78) no longer restart-loop. The old finish script returned 1, which s6 treats as "restart". Services now mark themselves down with `s6-svc -O`
+- Each service is a single `services.d/<name>/run` file with its restart policy written inline; there are no finish scripts, and Multica's `run.sh` now lives in `services.d/multica/run`
 - Fix: `multica auth status` exits 0 when unauthenticated; its output is now checked, so a missing token no longer crash-loops the daemon
 - Fix: `/workspace` is persisted in `/data/workspace`. The old image's `WORKDIR /workspace` baked a real directory into the image, so the symlink was never created and its contents were lost on every update
 - The boot CLI update also runs when the daemon is parked, so Remote Control and the Cursor worker get current CLIs

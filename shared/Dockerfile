@@ -28,7 +28,7 @@ ENV HOME=/root \
     DEBIAN_FRONTEND=noninteractive \
     IS_SANDBOX=1
 
-# Seed Multica + Claude + Cursor + Pi. /run.sh tries to refresh them onto /data before the daemon starts.
+# Seed Multica + Claude + Cursor + Pi. services.d/multica/run refreshes them onto /data once per container start.
 # Debian/glibc base is required: Cursor Agent's bundled Node needs fcntl64 (fails on Alpine/musl).
 RUN \
     apt-get update \
@@ -128,13 +128,12 @@ RUN \
     && caddy version
 
 COPY rootfs /
-COPY run.sh /run.sh
 # Globs (not a list) so new scripts can't be forgotten.
-RUN chmod a+x /run.sh \
+RUN chmod a+x \
       /usr/bin/ha-* /usr/bin/agent-host-* /usr/bin/claude-rc-* \
       /usr/bin/update-agent-tools \
       /etc/cont-init.d/* \
-      /etc/services.d/*/run /etc/services.d/*/finish \
+      /etc/services.d/*/run \
     && caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 # No `WORKDIR /workspace`: it bakes a real directory into the image and the
@@ -142,4 +141,5 @@ RUN chmod a+x /run.sh \
 # could never be created.
 WORKDIR /
 # Entrypoint /init (from HA base) is PID 1. Longruns live in /etc/services.d.
-# Do not set CMD to /run.sh — that would start a second Multica alongside services.d.
+# No CMD: s6 starts every service in /etc/services.d (multica, remote-control,
+# cursor-worker, terminal, caddy).

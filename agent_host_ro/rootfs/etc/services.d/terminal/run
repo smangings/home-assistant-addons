@@ -1,14 +1,16 @@
 #!/command/with-contenv bash
-# s6 longrun: ingress web terminal. ttyd only listens on a unix socket;
-# Caddy (services.d/caddy) is the sole TCP listener and only admits the
-# Supervisor ingress proxy. tmux keeps a login in progress alive if the
-# browser panel is closed and reopened.
+# Ingress web terminal: ttyd -> tmux -> claude-rc-terminal.
+# ttyd only listens on a unix socket; Caddy (services.d/caddy) is the sole
+# TCP listener and only admits the Supervisor ingress proxy. tmux keeps a
+# login in progress alive if the browser panel is closed and reopened.
+#
+# Restart policy: any exit -> restart after 5s.
 set -uo pipefail
 # shellcheck source=/dev/null
 source /usr/lib/agent-host/common.sh
-ah_backoff terminal "" 5
+
 rm -f /run/ttyd.sock
-exec ttyd \
+ah_run ttyd \
   --writable \
   --interface /run/ttyd.sock \
   --ping-interval 30 \
@@ -16,3 +18,4 @@ exec ttyd \
   --terminal-type xterm-256color \
   --client-option titleFixed="Agent Host $(ah_mode_label)" \
   tmux -u new-session -A -s agent-host /usr/bin/claude-rc-terminal
+ah_restart_after terminal "" 5 $?

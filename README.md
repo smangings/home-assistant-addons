@@ -30,7 +30,17 @@ Status sensors: `sensor.claude_remote_control_{ro,rw}_status`, `sensor.cursor_wo
 
 ## Development
 
-`shared/` holds everything both add-ons have in common: the Dockerfile, `run.sh` and `rootfs/`. Per-variant files are `config.yaml`, `Dockerfile.overlay` (the mode ENV, including `AGENT_HOST_MODE_LABEL`), `DOCS.md`, `CHANGELOG.md` and `translations/`.
+`shared/` holds everything both add-ons have in common: the Dockerfile and `rootfs/`. Each service is one file, `rootfs/etc/services.d/<name>/run`, with its restart policy written at the bottom using the helpers in `rootfs/usr/lib/agent-host/common.sh`:
+
+| Service | What it runs |
+|---|---|
+| `multica` | Multica daemon (optional), boot CLI update, RW auto-stop timer |
+| `remote-control` | Claude Code Remote Control |
+| `cursor-worker` | Cursor My Machines worker (opt-in) |
+| `terminal` | ttyd web terminal for the sidebar panel |
+| `caddy` | Ingress gate in front of the terminal |
+
+The only init step is `rootfs/etc/cont-init.d/50-workspace` (the persistent `/workspace` link). Per-variant files are `config.yaml`, `Dockerfile.overlay` (the mode ENV, including `AGENT_HOST_MODE_LABEL`), `DOCS.md`, `CHANGELOG.md` and `translations/`.
 
 ```bash
 ./sync-addons.sh   # copy shared/ into agent_host_ro/ and agent_host_rw/

@@ -1,7 +1,10 @@
 #!/command/with-contenv bash
-# s6 longrun: Claude Code Remote Control for this add-on.
-# Waits (without exiting) until a claude.ai login exists in the isolated
-# HOME, then execs `claude remote-control` so s6 supervises it directly.
+# Claude Code Remote Control for this add-on.
+# Waits until a claude.ai login exists in the isolated HOME, then runs
+# `claude remote-control` in the configured directory.
+#
+# Restart policy: disabled -> stay down; any exit -> restart after 10s
+# (back to waiting for a login if it expired).
 set -uo pipefail
 # shellcheck source=/dev/null
 source /usr/lib/agent-host/common.sh
@@ -9,13 +12,12 @@ SVC=remote-control
 COMPONENT=remote_control
 log() { echo "[${SVC}] $*"; }
 
-ah_backoff "${SVC}" "${COMPONENT}" 10
 rc_env
 
 if ! ah_bool claude_remote_control true; then
   log "disabled (claude_remote_control: false)"
   ah_publish "${COMPONENT}" disabled "claude_remote_control option is off"
-  ah_mark "${SVC}" disabled
+  ah_stay_down "${SVC}"
   exit 0
 fi
 
@@ -42,4 +44,5 @@ fi
 cd "${dir}" || exit 1
 log "starting as \"${name}\" in ${dir} (permission mode: ${perm}, claude $(claude --version 2>/dev/null | head -1))"
 ah_publish "${COMPONENT}" ready "Remote Control \"${name}\" in ${dir}"
-exec claude "${args[@]}"
+ah_run claude "${args[@]}"
+ah_restart_after "${SVC}" "${COMPONENT}" 10 $?

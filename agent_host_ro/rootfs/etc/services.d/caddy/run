@@ -1,9 +1,13 @@
 #!/command/with-contenv bash
-# s6 longrun: ingress gate in front of ttyd (allow 172.30.32.2 only).
+# Ingress gate in front of the web terminal (see /etc/caddy/Caddyfile):
+# only the Supervisor ingress proxy (172.30.32.2) reaches ttyd.
+#
+# Restart policy: any exit -> restart after 5s.
 # shellcheck source=/dev/null
 source /usr/lib/agent-host/common.sh
-ah_backoff caddy "" 5
+
 # Keep Caddy's state dirs out of /data (nothing to persist: no admin API,
 # no certificates, no autosaved config).
 export XDG_CONFIG_HOME=/tmp/caddy/config XDG_DATA_HOME=/tmp/caddy/data
-exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+ah_run caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+ah_restart_after caddy "" 5 $?

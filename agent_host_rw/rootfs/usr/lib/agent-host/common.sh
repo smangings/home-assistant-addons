@@ -1,9 +1,9 @@
 # shellcheck shell=bash
-# Shared helpers for Agent Host s6 services (remote-control, cursor-worker,
-# terminal). Source it; it defines functions only and exports nothing on load.
+# Shared helpers for the Agent Host s6 services (services.d/*/run) and the
+# terminal scripts. Source it; it defines functions only and exports nothing
+# on load.
 
 AH_OPTIONS_FILE="${AH_OPTIONS_FILE:-/data/options.json}"
-AH_RUN_DIR="${AH_RUN_DIR:-/run/agent-host}"
 AH_RC_HOME="${AH_RC_HOME:-/data/remote-control}"
 
 # ah_option KEY [DEFAULT]: string value from the add-on options file.
@@ -57,45 +57,40 @@ ah_mode_label() {
   fi
 }
 
-# --- s6 lifecycle markers -------------------------------------------------
-# s6 finish scripts get ~5s before they are killed, so backoff sleeps happen
-# at the top of the next run instead of in finish.
+# --- Service lifecycle -----------------------------------------------------
+# Each services.d/<name>/run states its own restart policy with these three
+# helpers, so there are no finish scripts. s6 restarts a service whenever its
+# run script exits, unless the script asked to stay down first.
 
-ah_mark() { mkdir -p "${AH_RUN_DIR}"; : >"${AH_RUN_DIR}/$1.$2"; }
-ah_has_mark() { [[ -e "${AH_RUN_DIR}/$1.$2" ]]; }
-ah_clear_marks() { rm -f "${AH_RUN_DIR}/$1".* 2>/dev/null || true; }
-
-# ah_backoff SERVICE COMPONENT SECONDS: sleep if the previous run crashed.
-ah_backoff() {
-  local svc="$1" component="$2" secs="$3" code=""
-  if ah_has_mark "${svc}" crashed; then
-    code="$(cat "${AH_RUN_DIR}/${svc}.crashed" 2>/dev/null || true)"
-    echo "[${svc}] previous run exited ${code:-abnormally}; restarting in ${secs}s"
-    [[ -n "${component}" ]] && ah_publish "${component}" error "Exited ${code:-abnormally}; restarting in ${secs}s"
-    sleep "${secs}"
-  fi
-  ah_clear_marks "${svc}"
+# ah_stay_down SERVICE: when this run exits, s6 must not restart it
+# (disabled, missing configuration). Same effect as a finish script
+# returning 125.
+ah_stay_down() {
+  s6-svc -O "/run/service/$1" 2>/dev/null || true
 }
 
-# ah_finish SERVICE EXIT_CODE SIGNAL: shared finish policy.
-#   disabled marker -> 125 (s6: permanent, do not restart)
-#   reload marker   -> 0   (restart now)
-#   anything else   -> record crash, 0 (restart; run applies the backoff)
-ah_finish() {
-  local svc="$1" code="${2:-0}" sig="${3:-0}"
-  if [[ "${code}" -eq 256 ]]; then
-    code=$((128 + sig))
-  fi
-  if ah_has_mark "${svc}" disabled; then
-    exit 125
-  fi
-  if ah_has_mark "${svc}" reload; then
-    rm -f "${AH_RUN_DIR}/${svc}.reload"
-    exit 0
-  fi
-  mkdir -p "${AH_RUN_DIR}"
-  printf '%s' "${code}" >"${AH_RUN_DIR}/${svc}.crashed"
-  exit 0
+# ah_run CMD...: run CMD as a child and return its exit code. SIGTERM/SIGINT
+# (add-on stop) are passed on to CMD, then the script exits without any
+# restart delay.
+ah_run() {
+  "$@" &
+  AH_CHILD=$!
+  trap 'kill -TERM "${AH_CHILD}" 2>/dev/null; wait "${AH_CHILD}"; exit 143' TERM INT
+  wait "${AH_CHILD}"
+  local rc=$?
+  trap - TERM INT
+  return "${rc}"
+}
+
+# ah_restart_after SERVICE COMPONENT SECONDS EXIT_CODE: log (and publish to
+# the component's HA sensor, if any) that the service exited, wait, then exit
+# so s6 restarts it. The wait keeps a crashing service from looping.
+ah_restart_after() {
+  local svc="$1" component="$2" secs="$3" rc="$4"
+  echo "[${svc}] exited ${rc}; restarting in ${secs}s"
+  [[ -n "${component}" ]] && ah_publish "${component}" error "Exited ${rc}; restarting in ${secs}s"
+  sleep "${secs}"
+  exit "${rc}"
 }
 
 # --- Claude Remote Control ------------------------------------------------
@@ -112,6 +107,7 @@ rc_env() {
   export IS_SANDBOX=1
   export PATH="/data/bin:/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CONFIG_DIR || true
+  mkdir -p "${HOME}" && chmod 0700 "${HOME}"
   mkdir -p "${HOME}/.claude" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
   ah_ha_env
 }
