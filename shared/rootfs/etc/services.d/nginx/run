@@ -1,6 +1,0 @@
-#!/command/with-contenv bash
-# s6 longrun: ingress gate in front of ttyd (allow 172.30.32.2 only).
-# shellcheck source=/dev/null
-source /usr/lib/agent-host/common.sh
-ah_backoff nginx "" 5
-exec nginx -c /etc/nginx/agent-host.conf

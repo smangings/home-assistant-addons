@@ -15,6 +15,11 @@ ARG NODE_SHA256_ARM64=4018815ac1bed4f18208901bbde524fee881253b591ee7bc952660e69b
 ARG TTYD_VERSION=1.7.7
 ARG TTYD_SHA256_X64=8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55
 ARG TTYD_SHA256_ARM64=b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165
+# Caddy gates the ingress terminal (Debian ships 2.6.2; pin the upstream release).
+# SHA-512 values are from the release's official checksums file.
+ARG CADDY_VERSION=2.11.9
+ARG CADDY_SHA512_X64=0e85544340290a16ce4bfb76fe7d65e9de1bf3a6e67f5ccfff30b30d27ea4c73e078077b7bf3e58ae60b6b12e44327705287059c775bca5782e8ee85ea7edd75
+ARG CADDY_SHA512_ARM64=9e5e76d7888542924de2c25353ae87c5f77e2a22c5b1198633cae13688922282e05383d142599205c88d8d80eee5e967d291214d7abce4835329a191b20dd6e0
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -34,14 +39,12 @@ RUN \
         git \
         jq \
         less \
-        nginx \
         openssh-client \
         procps \
         tar \
         tmux \
         xz-utils \
     && rm -rf /var/lib/apt/lists/* \
-    && rm -f /etc/nginx/sites-enabled/default \
     \
     && case "${BUILD_ARCH}" in \
          amd64) \
@@ -52,6 +55,8 @@ RUN \
            NODE_SHA256="${NODE_SHA256_X64}" \
            TTYD_ASSET="ttyd.x86_64" \
            TTYD_SHA256="${TTYD_SHA256_X64}" \
+           CADDY_ARCH="amd64" \
+           CADDY_SHA512="${CADDY_SHA512_X64}" \
            ;; \
          aarch64) \
            MULTICA_ARCH="arm64" \
@@ -61,6 +66,8 @@ RUN \
            NODE_SHA256="${NODE_SHA256_ARM64}" \
            TTYD_ASSET="ttyd.aarch64" \
            TTYD_SHA256="${TTYD_SHA256_ARM64}" \
+           CADDY_ARCH="arm64" \
+           CADDY_SHA512="${CADDY_SHA512_ARM64}" \
            ;; \
          *) echo "Unsupported arch: ${BUILD_ARCH}" >&2; exit 1 ;; \
        esac \
@@ -102,6 +109,15 @@ RUN \
     && install -m 0755 /tmp/ttyd /usr/local/bin/ttyd \
     && rm -f /tmp/ttyd \
     \
+    && CADDY_TGZ="caddy_${CADDY_VERSION}_linux_${CADDY_ARCH}.tar.gz" \
+    && curl -fsSL \
+         "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/${CADDY_TGZ}" \
+         -o "/tmp/${CADDY_TGZ}" \
+    && echo "${CADDY_SHA512}  /tmp/${CADDY_TGZ}" | sha512sum -c - \
+    && tar -xzf "/tmp/${CADDY_TGZ}" -C /tmp caddy \
+    && install -m 0755 /tmp/caddy /usr/local/bin/caddy \
+    && rm -f /tmp/caddy "/tmp/${CADDY_TGZ}" \
+    \
     && npm install -g --omit=dev @earendil-works/pi-coding-agent@latest \
     \
     && multica version \
@@ -109,7 +125,7 @@ RUN \
     && cursor-agent --version \
     && pi --version \
     && ttyd --version \
-    && nginx -v
+    && caddy version
 
 COPY rootfs /
 COPY run.sh /run.sh
@@ -118,7 +134,8 @@ RUN chmod a+x /run.sh \
       /usr/bin/ha-* /usr/bin/agent-host-* /usr/bin/claude-rc-* \
       /usr/bin/update-agent-tools \
       /etc/cont-init.d/* \
-      /etc/services.d/*/run /etc/services.d/*/finish
+      /etc/services.d/*/run /etc/services.d/*/finish \
+    && caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 # No `WORKDIR /workspace`: it bakes a real directory into the image and the
 # persistent /workspace -> /data/workspace symlink (cont-init 50-workspace)

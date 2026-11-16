@@ -1,6 +1,6 @@
 #!/command/with-contenv bash
 # s6 longrun: ingress web terminal. ttyd only listens on a unix socket;
-# nginx (services.d/nginx) is the sole TCP listener and only admits the
+# Caddy (services.d/caddy) is the sole TCP listener and only admits the
 # Supervisor ingress proxy. tmux keeps a login in progress alive if the
 # browser panel is closed and reopened.
 set -uo pipefail

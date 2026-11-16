@@ -24,7 +24,7 @@ A **read-only advisor**: ask it to review automations, explain logs or plan chan
 3. Open the printed URL, approve, and paste the code back into the terminal.
 4. Within about 15 seconds Remote Control starts. Pick **HA Agent Host (RO)** at [claude.ai/code](https://claude.ai/code) or in the Claude app.
 
-Use a Claude Pro/Max/Team/Enterprise account. The `claude_code_oauth_token` option (`claude setup-token`) can't be used for Remote Control: it is inference-only. The add-on keeps it away from Remote Control by giving RC its own HOME (`/data/remote-control`). The terminal panel is admin-only, and nginx admits only the Supervisor ingress proxy.
+Use a Claude Pro/Max/Team/Enterprise account. The `claude_code_oauth_token` option (`claude setup-token`) can't be used for Remote Control: it is inference-only. The add-on keeps it away from Remote Control by giving RC its own HOME (`/data/remote-control`). The terminal panel is admin-only, and Caddy admits only the Supervisor ingress proxy.
 
 | Option | Default | Description |
 |--------|---------|-------------|

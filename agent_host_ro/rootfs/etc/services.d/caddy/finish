@@ -1,4 +1,4 @@
 #!/command/with-contenv bash
 # shellcheck source=/dev/null
 source /usr/lib/agent-host/common.sh
-ah_finish nginx "${1:-0}" "${2:-0}"
+ah_finish caddy "${1:-0}" "${2:-0}"

@@ -17,7 +17,7 @@ boot: auto
 hassio_api: true
 hassio_role: default
 homeassistant_api: true
-# Web terminal (sign-in for Remote Control). nginx admits only the ingress proxy.
+# Web terminal (sign-in for Remote Control). Caddy admits only the ingress proxy.
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:robot-outline

@@ -1,0 +1,26 @@
+# Ingress gate for the Agent Host web terminal.
+# Only the Supervisor ingress proxy (172.30.32.2) may connect; any other
+# container on the hassio network gets 403 instead of a root shell.
+# remote_ip matches the actual peer address, not X-Forwarded-For, so it
+# cannot be spoofed with headers.
+{
+	admin off
+	auto_https off
+	persist_config off
+	log {
+		output stderr
+		format console
+		level ERROR
+	}
+}
+
+:8099 {
+	@ingress remote_ip 172.30.32.2
+	handle @ingress {
+		# ttyd on a unix socket; WebSocket upgrades are proxied automatically.
+		reverse_proxy unix//run/ttyd.sock
+	}
+	handle {
+		respond 403
+	}
+}

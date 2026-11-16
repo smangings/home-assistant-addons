@@ -8,7 +8,7 @@
   - Uses its own HOME (`/data/remote-control`) and an env scrubbed of `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY`, so the daemon's tokens never override the claude.ai login
   - Pre-seeds workspace trust and the "Enable Remote Control?" prompt, and writes a user `CLAUDE.md` describing the RO boundary
   - Status sensor `sensor.claude_remote_control_ro_status` (`waiting_for_login` → `ready` / `error` / `disabled`)
-- **Agent Host RO sidebar panel**: ingress web terminal (ttyd 1.7.7 + tmux) with a guided `claude-rc-login`. nginx admits only the Supervisor ingress proxy
+- **Agent Host RO sidebar panel**: ingress web terminal (ttyd 1.7.7 + tmux) behind Caddy 2.11.9, with a guided `claude-rc-login`. Caddy admits only the Supervisor ingress proxy
 - **Cursor My Machines worker** (opt-in `cursor_worker`): registers `/config` and `/workspace/*` git checkouts and restarts when checkouts change. Runs with a scrubbed env that holds only the Cursor key. Sensor `sensor.cursor_worker_ro_status`
 - Environment names always carry the mode: blank defaults are `HA Agent Host (RO)` / `ha-agent-host-ro`, and custom names get `(RO)`/`-ro` appended when missing
 - `multica_token` is now optional. Without it the daemon stays parked and the other services keep running
