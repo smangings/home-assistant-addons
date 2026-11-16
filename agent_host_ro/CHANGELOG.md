@@ -18,6 +18,7 @@
 - Fix: `/workspace` is persisted in `/data/workspace`. The old image's `WORKDIR /workspace` baked a real directory into the image, so the symlink was never created and its contents were lost on every update
 - The boot CLI update also runs when the daemon is parked, so Remote Control and the Cursor worker get current CLIs
 - Claude Code baseline 2.1.318 → 2.1.325
+- Fix: in the read-only add-on, `ha-api` also refuses curl options that change the method or send a body (`-X`, `--request`, `-d`/`--data*`, `--json`, `-F`/`--form`, `-T`). Before, `ha-api GET … -X POST` got around the block
 
 ## 0.3.12
 

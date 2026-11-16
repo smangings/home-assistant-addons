@@ -1,12 +1,13 @@
 #!/command/with-contenv bash
 # Multica daemon (optional: needs multica_token or stored credentials).
 # Configures provider auth for the Claude / Cursor / Pi runtimes, updates the
-# agent CLIs once per container start, arms the RW auto-stop timer, then runs
-# `multica daemon start --foreground`.
+# agent CLIs once per container start, then runs
+# `multica daemon start --foreground`. (The RW auto-stop timer is its own
+# service: services.d/auto-stop/run.)
 #
 # Restart policy: config/auth failure (exit 78), no Multica credentials
-# (parked) or a clean daemon exit -> stay down; daemon crash -> restart
-# after 3s.
+# (parked) or a clean daemon exit -> stay down; daemon crash, or any other
+# unplanned exit (e.g. a `set -e` abort during setup) -> restart after 3s.
 set -euo pipefail
 # shellcheck source=/dev/null
 source /usr/lib/agent-host/common.sh
@@ -207,121 +208,6 @@ configure_provider_auth() {
   fi
 }
 
-# Background sleep. Returns 0 if it finished, 1 if a signal stopped it.
-# AUTO_STOP_SLEEP_PID is read by the TERM trap in auto_stop_after.
-auto_stop_sleep() {
-  local duration="$1"
-  local status
-  sleep "${duration}" &
-  AUTO_STOP_SLEEP_PID=$!
-  set +e
-  wait "${AUTO_STOP_SLEEP_PID}"
-  status=$?
-  set -e
-  AUTO_STOP_SLEEP_PID=""
-  [[ "${status}" -eq 0 ]]
-}
-
-# One-shot timer for the read-write add-on. Runs in the background so the
-# daemon can start. A shutdown signal exits without calling Supervisor.
-auto_stop_after() {
-  local minutes="$1"
-  local seconds="$2"
-  local attempt=1
-  local delay=15
-  local told_error=0
-  local deadline
-  AUTO_STOP_SLEEP_PID=""
-
-  cancel_auto_stop() {
-    log info "auto-stop cancelled"
-    if [[ -n "${AUTO_STOP_SLEEP_PID}" ]]; then
-      kill "${AUTO_STOP_SLEEP_PID}" 2>/dev/null || true
-      wait "${AUTO_STOP_SLEEP_PID}" 2>/dev/null || true
-    fi
-    exit 0
-  }
-  trap cancel_auto_stop TERM INT
-
-  deadline="$(date -d "+${seconds} seconds" '+%Y-%m-%d %H:%M:%S %Z' 2>/dev/null || true)"
-  log info "write-access add-on will stop in ${minutes} minutes${deadline:+ at ${deadline}}"
-
-  if ! auto_stop_sleep "${seconds}"; then
-    log info "auto-stop interrupted; not stopping"
-    exit 0
-  fi
-
-  log info "auto-stop reached (${minutes} minutes); stopping add-on"
-
-  if [[ -z "${SUPERVISOR_TOKEN:-}" ]]; then
-    log error "SUPERVISOR_TOKEN is not set; add-on was not stopped"
-    publish_status error "Auto-stop failed: SUPERVISOR_TOKEN missing"
-    exit 0
-  fi
-
-  while true; do
-    if curl -fsS --max-time 30 -X POST \
-      -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-      -o /dev/null \
-      http://supervisor/addons/self/stop; then
-      log info "Supervisor accepted stop"
-      publish_status stopped "Auto-stopped after ${minutes} minutes"
-      exit 0
-    fi
-    log warning "Supervisor stop failed (attempt ${attempt})"
-    if [[ "${told_error}" -eq 0 ]]; then
-      publish_status error "Auto-stop failed; will keep retrying"
-      told_error=1
-    fi
-    if [[ "${attempt}" -eq 5 ]]; then
-      log warning "still unable to stop; retrying once a minute"
-      delay=60
-    fi
-    attempt=$((attempt + 1))
-    if ! auto_stop_sleep "${delay}"; then
-      log info "auto-stop interrupted during stop retry"
-      exit 0
-    fi
-  done
-}
-
-# Pid of the timer subshell. A crashed daemon can leave that process running
-# when s6 starts this script again; the next start stops it before arming another.
-AUTO_STOP_PIDFILE="${MULTICA_AUTO_STOP_PIDFILE:-/run/multica-auto-stop.pid}"
-
-stop_leftover_auto_stop() {
-  local old=""
-  [[ -f "${AUTO_STOP_PIDFILE}" ]] || return 0
-  old="$(tr -d '[:space:]' <"${AUTO_STOP_PIDFILE}" 2>/dev/null || true)"
-  rm -f "${AUTO_STOP_PIDFILE}"
-  if [[ "${old}" =~ ^[0-9]+$ ]]; then
-    kill "${old}" 2>/dev/null || true
-  fi
-}
-
-AUTO_STOP_TIMER_PID=""
-start_write_access_auto_stop() {
-  local minutes seconds timer_pid
-  if [[ "${ACCESS_MODE}" != "rw" ]]; then
-    return 0
-  fi
-  stop_leftover_auto_stop
-  minutes="$(option auto_stop_minutes "0")"
-  if [[ ! "${minutes}" =~ ^[0-9]+$ ]] || [[ "${minutes}" -eq 0 ]]; then
-    log info "Write access stays on (auto_stop_minutes=${minutes:-0})"
-    return 0
-  fi
-  # 10# so a hand-edited "08" is decimal. Bash otherwise treats it as octal and
-  # aborts startup under set -e.
-  seconds=$((10#${minutes} * 60))
-  log info "Write access auto-stop in ${minutes} minutes"
-  auto_stop_after "${minutes}" "${seconds}" &
-  timer_pid=$!
-  AUTO_STOP_TIMER_PID="${timer_pid}"
-  mkdir -p "$(dirname "${AUTO_STOP_PIDFILE}")"
-  printf '%s\n' "${timer_pid}" >"${AUTO_STOP_PIDFILE}"
-}
-
 # /run is cleared when the container stops, and kept when s6 restarts this
 # service after a daemon crash. One update pass per container start. Also runs
 # when the daemon is parked (no multica_token): Remote Control and the Cursor
@@ -346,6 +232,11 @@ run_boot_update() {
 if [[ "${MULTICA_RUN_LIB:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
 fi
+
+# Unplanned exits (a `set -e` abort during setup) get the same 3s delay as a
+# daemon crash instead of s6's 1s retry. Planned exits are 0 and 78 (stay
+# down), 143/130 (add-on stopping), or already delayed by ah_restart_after.
+trap 'rc=$?; case "${rc}" in 0|78|130|143) ;; *) [[ -n "${AH_RESTART_DELAYED:-}" ]] || ah_restart_after multica "" 3 "${rc}" ;; esac' EXIT
 
 
 if [[ ! -d /config ]]; then
@@ -424,17 +315,10 @@ else
   # Multica is optional in Agent Host: park the daemon (it stays down, see the
   # end of this branch) and leave Remote Control / Cursor worker running.
   log info "No multica_token and no stored Multica credentials — Multica daemon not started (set multica_token to enable it)"
-  # The write-access window applies to the whole add-on (Remote Control and
-  # the Cursor worker can edit /config too), not only to the daemon. Arm it
-  # before the (slow) CLI update, and keep this script alive as the timer's
-  # parent so the add-on still turns itself off.
-  start_write_access_auto_stop
+  # The CLI update still runs: Remote Control and the Cursor worker use the
+  # same /data CLIs.
   run_boot_update
   publish_status disabled "No multica_token configured"
-  if [[ -n "${AUTO_STOP_TIMER_PID}" ]]; then
-    log info "Multica parked; write-access auto-stop timer still armed"
-    wait "${AUTO_STOP_TIMER_PID}" || true
-  fi
   ah_stay_down multica
   exit 0
 fi
@@ -446,9 +330,6 @@ if [[ -n "${WORKSPACE_ID}" ]]; then
     log warning "Could not switch workspace to ${WORKSPACE_ID}"
 fi
 
-# Arm before the CLI update (up to ~25 min): Remote Control already has write
-# access from container start, so the window counts from here.
-start_write_access_auto_stop
 run_boot_update
 
 for tool in claude cursor-agent pi; do

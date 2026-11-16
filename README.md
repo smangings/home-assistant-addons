@@ -39,6 +39,7 @@ Status sensors: `sensor.claude_remote_control_{ro,rw}_status`, `sensor.cursor_wo
 | `cursor-worker` | Cursor My Machines worker (opt-in) |
 | `terminal` | ttyd web terminal for the sidebar panel |
 | `caddy` | Ingress gate in front of the terminal |
+| `auto-stop` | `auto_stop_minutes` window for the RW add-on (stays down otherwise) |
 
 The only init step is `rootfs/etc/cont-init.d/50-workspace` (the persistent `/workspace` link). Per-variant files are `config.yaml`, `Dockerfile.overlay` (the mode ENV, including `AGENT_HOST_MODE_LABEL`), `DOCS.md`, `CHANGELOG.md` and `translations/`.
 

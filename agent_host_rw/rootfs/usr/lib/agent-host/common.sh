@@ -66,7 +66,8 @@ ah_mode_label() {
 # (disabled, missing configuration). Same effect as a finish script
 # returning 125.
 ah_stay_down() {
-  s6-svc -O "/run/service/$1" 2>/dev/null || true
+  /command/s6-svc -O "/run/service/$1" \
+    || echo "[$1] warning: could not mark the service down; s6 will restart it"
 }
 
 # ah_run CMD...: run CMD as a child and return its exit code. SIGTERM/SIGINT
@@ -89,7 +90,12 @@ ah_restart_after() {
   local svc="$1" component="$2" secs="$3" rc="$4"
   echo "[${svc}] exited ${rc}; restarting in ${secs}s"
   [[ -n "${component}" ]] && ah_publish "${component}" error "Exited ${rc}; restarting in ${secs}s"
-  sleep "${secs}"
+  # Read by multica/run's EXIT trap so the delay isn't applied twice.
+  # shellcheck disable=SC2034
+  AH_RESTART_DELAYED=1
+  # Background sleep + wait so an add-on stop (SIGTERM) is handled at once,
+  # even if the caller installed a trap.
+  sleep "${secs}" & wait $!
   exit "${rc}"
 }
 

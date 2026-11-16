@@ -16,10 +16,24 @@ if [[ -z "${METHOD}" || -z "${PATH_PART}" ]]; then
 fi
 
 METHOD_UPPER="$(printf '%s' "${METHOD}" | tr '[:lower:]' '[:upper:]')"
-if [[ "${MULTICA_ACCESS_MODE:-}" == "ro" && "${METHOD_UPPER}" != "GET" && "${METHOD_UPPER}" != "HEAD" ]]; then
-  echo "ha-api: write methods are blocked in the read-only Agent Host add-on (${METHOD_UPPER})" >&2
-  echo "ha-api: note: SUPERVISOR_TOKEN is still present — filesystem RO does not revoke Core API rights" >&2
-  exit 1
+if [[ "${MULTICA_ACCESS_MODE:-}" == "ro" ]]; then
+  blocked=""
+  if [[ "${METHOD_UPPER}" != "GET" && "${METHOD_UPPER}" != "HEAD" ]]; then
+    blocked="${METHOD_UPPER}"
+  fi
+  # Extra curl arguments come after -X, and curl uses the last method and any
+  # body it is given, so they could turn a GET into a write.
+  for arg in "$@"; do
+    case "${arg}" in
+      -X*|--request|--request=*|-d*|--data*|--json*|-F*|--form*|-T*|--upload-file*)
+        blocked="curl option ${arg}" ;;
+    esac
+  done
+  if [[ -n "${blocked}" ]]; then
+    echo "ha-api: write requests are blocked in the read-only Agent Host add-on (${blocked})" >&2
+    echo "ha-api: note: SUPERVISOR_TOKEN is still present — filesystem RO does not revoke Core API rights" >&2
+    exit 1
+  fi
 fi
 
 TOKEN="${HA_TOKEN:-${SUPERVISOR_TOKEN:-}}"

@@ -43,7 +43,7 @@ Lets Cursor cloud agents run their shell and file tools on this add-on ([docs](h
 2. Set `cursor_worker: true` and restart.
 3. Pick **ha-agent-host-ro** under My Machines at [cursor.com/agents](https://cursor.com/agents).
 
-Cursor routes a repo request by git remote. By default the worker registers `/config` (if it's a git checkout with a remote) plus each `/workspace/*` checkout that has a remote. Override with `cursor_worker_dirs` (colon-separated). New clones are picked up within about a minute. The worker process only receives the Cursor key: no Multica, Claude or OpenRouter secrets, and no `SUPERVISOR_TOKEN`. In this add-on `/config` is read-only to the worker too; clone repos under `/workspace` for write work.
+Cursor routes a repo request by git remote. By default the worker registers `/config` (if it's a git checkout with a remote) plus each `/workspace/*` checkout that has a remote. Override with `cursor_worker_dirs` (colon-separated). New clones are picked up within about a minute. The worker's environment holds only the Cursor key: no Multica, Claude or OpenRouter secrets, and no `SUPERVISOR_TOKEN`. It still runs as root with access to `/data` (including `options.json` and the Remote Control login) and the Supervisor token on disk, so **anyone who can drive your Cursor account can read this add-on's other secrets**. Only enable it for a Cursor account you trust. In this add-on `/config` is read-only to the worker too; clone repos under `/workspace` for write work.
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -100,10 +100,10 @@ This add-on replaces **Multica Daemon (read-only)** under a new slug (`agent_hos
 
 | Path | Access |
 |------|--------|
-| `/config`, `/share`, `/media` | **read-only** (the mount itself — nothing in this add-on can write it) |
+| `/config`, `/share`, `/media` | **read-only** mount: direct file edits fail with `EROFS` |
 | `/workspace` → `/data/workspace` | **read-write** (scratch, git clones, Multica `local_directory`) |
 
-The Core API token (`SUPERVISOR_TOKEN`) is still present. `ha-api` refuses non-GET requests, but a raw `curl` could still call services. The read-only guarantee covers files, not the API.
+The Core API token (`SUPERVISOR_TOKEN`) is still present, and Home Assistant's API can change what is stored under `/config` (automations, scripts, integrations in `.storage`) and restart Core. `ha-api` refuses write requests in this add-on, but a raw `curl` with the token is not blocked. The read-only mount stops direct file edits, **not** changes made through the API.
 
 ## Status sensors
 

@@ -17,8 +17,9 @@
 - Fix: `multica auth status` exits 0 when unauthenticated; its output is now checked, so a missing token no longer crash-loops the daemon
 - Fix: `/workspace` is persisted in `/data/workspace`. The old image's `WORKDIR /workspace` baked a real directory into the image, so the symlink was never created and its contents were lost on every update
 - The boot CLI update also runs when the daemon is parked, so Remote Control and the Cursor worker get current CLIs
-- `auto_stop_minutes` now covers the whole add-on: it is armed even without a Multica token, and the stop also ends Remote Control and Cursor worker sessions
+- `auto_stop_minutes` now covers the whole add-on: it runs as its own service (`services.d/auto-stop`), independent of Multica logging in, and a service restart resumes the original deadline instead of opening a new window. The stop also ends Remote Control and Cursor worker sessions
 - Claude Code baseline 2.1.318 → 2.1.325
+- Fix: in the read-only add-on, `ha-api` also refuses curl options that change the method or send a body (`-X`, `--request`, `-d`/`--data*`, `--json`, `-F`/`--form`, `-T`). Before, `ha-api GET … -X POST` got around the block
 
 ## 0.3.12
 

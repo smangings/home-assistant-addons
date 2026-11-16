@@ -43,7 +43,7 @@ Lets Cursor cloud agents run their shell and file tools on this add-on ([docs](h
 2. Set `cursor_worker: true` and restart.
 3. Pick **ha-agent-host-rw** under My Machines at [cursor.com/agents](https://cursor.com/agents).
 
-Cursor routes a repo request by git remote. By default the worker registers `/config` (if it's a git checkout with a remote) plus each `/workspace/*` checkout that has a remote. Override with `cursor_worker_dirs` (colon-separated). New clones are picked up within about a minute. The worker process only receives the Cursor key: no Multica, Claude or OpenRouter secrets, and no `SUPERVISOR_TOKEN`.
+Cursor routes a repo request by git remote. By default the worker registers `/config` (if it's a git checkout with a remote) plus each `/workspace/*` checkout that has a remote. Override with `cursor_worker_dirs` (colon-separated). New clones are picked up within about a minute. The worker's environment holds only the Cursor key: no Multica, Claude or OpenRouter secrets, and no `SUPERVISOR_TOKEN`. It still runs as root with access to `/data` (including `options.json` and the Remote Control login) and the Supervisor token on disk, so **anyone who can drive your Cursor account can read this add-on's other secrets**. Only enable it for a Cursor account you trust.
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -66,7 +66,6 @@ Cursor routes a repo request by git remote. By default the worker registers `/co
 | `pi_openrouter_model` | `anthropic/claude-sonnet-4` | Default Pi model on OpenRouter |
 | `multica_max_concurrent_tasks` | `2` | Concurrency |
 | `auto_stop_minutes` | `0` | Turn the whole add-on off this many minutes after start. `0` leaves it running |
-| `auto_stop_minutes` | `0` | Stop the add-on this many minutes after start. `0` leaves it running |
 
 
 - **Claude Pro/Max:** leave `claude_api_key` empty and set `claude_code_oauth_token`. See [authentication](https://code.claude.com/docs/en/authentication).
@@ -75,7 +74,7 @@ Cursor routes a repo request by git remote. By default the worker registers `/co
 
 ## Auto-stop
 
-`auto_stop_minutes` defaults to `0`, which leaves the add-on on. Set it to `30` to turn the add-on off 30 minutes after each start; any positive number uses that window instead. The window covers the **whole add-on**, so it applies even when Multica isn't configured. When it ends, the add-on asks Supervisor to stop it, which also ends Remote Control sessions and the Cursor worker. That is a requested stop, so the add-on stays off (even with Watchdog on) until you start it again, and starting it opens a new window.
+`auto_stop_minutes` defaults to `0`, which leaves the add-on on. Set it to `30` to turn the add-on off 30 minutes after each start; any positive number uses that window instead. The window covers the **whole add-on** and runs as its own service, so it applies even when Multica isn't configured or fails to log in, and restarting a crashed service does not extend it. When it ends, the add-on asks Supervisor to stop it, which also ends Remote Control sessions and the Cursor worker. That is a requested stop, so the add-on stays off (even with Watchdog on) until you start it again, and starting it opens a new window.
 
 ## Moving from Multica Daemon (read-write)
 

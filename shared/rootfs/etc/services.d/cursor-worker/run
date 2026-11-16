@@ -83,8 +83,9 @@ mkdir -p /data/cursor-worker && chmod 0700 /data/cursor-worker
 cd /workspace || exit 1
 log "starting \"${name}\" (dirs=$(tr '\n' ' ' <<<"${dirs_key:-none}" | sed 's/ $//'), cwd=/workspace, $("${agent_bin}" --version 2>/dev/null | head -1))"
 
-# Scrubbed env: the worker never sees Multica / Claude / OpenRouter secrets
-# or SUPERVISOR_TOKEN. The key goes via env, not argv, so `ps` can't show it.
+# Scrubbed env: Multica / Claude / OpenRouter secrets and SUPERVISOR_TOKEN are
+# not in the worker's environment (it is still root and can read /data).
+# The key goes via env, not argv, so `ps` can't show it.
 env -i \
   HOME=/data \
   PATH="/data/bin:/data/.local/bin:/usr/local/bin:/usr/bin:/bin" \
