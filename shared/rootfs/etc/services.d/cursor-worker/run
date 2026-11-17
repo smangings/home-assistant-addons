@@ -1,0 +1,120 @@
+#!/command/with-contenv bash
+# Cursor "My Machines" worker (opt-in).
+# https://cursor.com/docs/cloud-agent/self-hosted/my-machines
+#
+# Cursor's agent loop stays in Cursor's cloud; shell/file tools run here over
+# an outbound connection (no inbound port). Repos are routed by the git
+# remote of each --worker-dir, so the checkout set is re-scanned every
+# CURSOR_WORKER_DIR_POLL_SECONDS.
+#
+# Restart policy: disabled or no API key -> stay down; checkouts changed ->
+# restart immediately with the new --worker-dir list; worker exits -> restart
+# after 30s.
+set -uo pipefail
+# shellcheck source=/dev/null
+source /usr/lib/agent-host/common.sh
+SVC=cursor-worker
+COMPONENT=cursor_worker
+POLL="${CURSOR_WORKER_DIR_POLL_SECONDS:-60}"
+log() { echo "[${SVC}] $*"; }
+
+ah_ha_env
+
+disable() {
+  local state="$1" message="$2"
+  log "${message}"
+  ah_publish "${COMPONENT}" "${state}" "${message}"
+  ah_stay_down "${SVC}"
+  exit 0
+}
+
+ah_bool cursor_worker false || disable disabled "disabled (cursor_worker: false)"
+
+api_key="$(ah_option cursor_api_key "")"
+[[ -n "${api_key}" ]] || disable error "cursor_worker is on but cursor_api_key is empty (needs a personal user API key)"
+
+agent_bin=""
+for candidate in /data/bin/agent /data/.local/bin/agent "$(command -v agent 2>/dev/null || true)"; do
+  if [[ -n "${candidate}" && -x "${candidate}" ]]; then agent_bin="${candidate}"; break; fi
+done
+if [[ -z "${agent_bin}" ]]; then
+  log "Cursor agent CLI not found"
+  ah_restart_after "${SVC}" "${COMPONENT}" 30 1
+fi
+
+has_remote() {
+  [[ -n "$(git -C "$1" -c safe.directory='*' remote 2>/dev/null || true)" ]]
+}
+
+# Prints one checkout root per line, sorted (also used as the change key).
+collect_dirs() {
+  local configured part d
+  configured="$(ah_option cursor_worker_dirs "")"
+  {
+    if [[ -n "${configured}" ]]; then
+      IFS=':' read -r -a parts <<<"${configured}"
+      for part in "${parts[@]}"; do
+        part="${part%/}"
+        [[ -n "${part}" && -d "${part}" ]] && printf '%s\n' "${part}"
+      done
+    else
+      has_remote /config && printf '%s\n' /config
+      if has_remote /workspace; then
+        printf '%s\n' /workspace
+      else
+        for d in /workspace/*/; do
+          d="${d%/}"
+          [[ -d "${d}" ]] && has_remote "${d}" && printf '%s\n' "${d}"
+        done
+      fi
+    fi
+  } | LC_ALL=C sort -u
+}
+
+name="$(agent-host-name slug "$(ah_option cursor_worker_name "")")"
+dirs_key="$(collect_dirs)"
+args=(worker --name "${name}" --data-dir /data/cursor-worker)
+while IFS= read -r d; do
+  [[ -n "${d}" ]] && args+=(--worker-dir "${d}")
+done <<<"${dirs_key}"
+args+=(start --verbose)
+
+mkdir -p /data/cursor-worker && chmod 0700 /data/cursor-worker
+cd /workspace || exit 1
+log "starting \"${name}\" (dirs=$(tr '\n' ' ' <<<"${dirs_key:-none}" | sed 's/ $//'), cwd=/workspace, $("${agent_bin}" --version 2>/dev/null | head -1))"
+
+# Scrubbed env: Multica / Claude / OpenRouter secrets and SUPERVISOR_TOKEN are
+# not in the worker's environment (it is still root and can read /data).
+# The key goes via env, not argv, so `ps` can't show it.
+env -i \
+  HOME=/data \
+  PATH="/data/bin:/data/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+  LANG=C.UTF-8 \
+  TERM=dumb \
+  TZ="${TZ:-UTC}" \
+  IS_SANDBOX=1 \
+  CURSOR_API_KEY="${api_key}" \
+  "${agent_bin}" "${args[@]}" &
+worker=$!
+unset api_key
+
+trap 'kill -TERM "${worker}" 2>/dev/null; wait "${worker}"; exit 143' TERM INT
+ah_publish "${COMPONENT}" ready "Cursor worker \"${name}\" connected (dirs: ${dirs_key:-none})"
+
+while true; do
+  sleep "${POLL}" &
+  timer=$!
+  wait -n "${worker}" "${timer}"
+  if ! kill -0 "${worker}" 2>/dev/null; then
+    kill "${timer}" 2>/dev/null || true
+    wait "${worker}"
+    ah_restart_after "${SVC}" "${COMPONENT}" 30 $?
+  fi
+  if [[ "$(collect_dirs)" != "${dirs_key}" ]]; then
+    log "checkouts changed; restarting with the new --worker-dir set"
+    kill "${timer}" 2>/dev/null || true
+    kill -TERM "${worker}" 2>/dev/null || true
+    wait "${worker}" 2>/dev/null || true
+    exit 0
+  fi
+done

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Entry point of the ingress web terminal (ttyd -> tmux -> this script).
+# Shows Remote Control / Cursor worker state, offers the login, then hands
+# over to an interactive shell that keeps the Remote Control HOME.
+set -uo pipefail
+# shellcheck source=/dev/null
+source /usr/lib/agent-host/common.sh
+rc_env
+
+label="$(ah_mode_label)"
+mode_lc="$(printf '%s' "${label}" | tr '[:upper:]' '[:lower:]')"
+rc_enabled=false; ah_bool claude_remote_control true && rc_enabled=true
+
+if [[ "${rc_enabled}" == true ]]; then
+  if rc_login_ready; then rc_state="signed in"; else rc_state="NOT signed in"; fi
+else
+  rc_state="disabled (claude_remote_control: false)"
+fi
+if ah_bool cursor_worker false; then
+  cw_state="enabled as $(agent-host-name slug "$(ah_option cursor_worker_name "")")"
+else
+  cw_state="disabled"
+fi
+
+cat <<EOF
+Agent Host (${label}): $( [[ "${label}" == RO ]] && echo "/config is READ-ONLY" || echo "/config is read-write" )
+  Claude Remote Control : ${rc_state}
+    name                : $(rc_name)
+    directory           : $(rc_directory)
+    sensor              : sensor.claude_remote_control_${mode_lc}_status
+  Cursor My Machines    : ${cw_state}
+
+Commands: claude-rc-login · claude auth status --text · ha-states
+EOF
+
+if [[ "${rc_enabled}" == true && "${rc_state}" == "NOT signed in" ]]; then
+  echo
+  read -r -p "Sign in Remote Control now? [Y/n] " answer
+  if [[ ! "${answer}" =~ ^[Nn] ]]; then
+    claude-rc-login || true
+  fi
+fi
+
+cd "$(rc_directory)" 2>/dev/null || cd /workspace || true
+exec bash --rcfile /usr/lib/agent-host/bashrc -i

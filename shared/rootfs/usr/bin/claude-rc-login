@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Guided claude.ai login for this add-on's Remote Control.
+# Safe to run from any shell in the add-on: it switches to the isolated
+# Remote Control HOME first so the login lands where the service looks.
+set -uo pipefail
+# shellcheck source=/dev/null
+source /usr/lib/agent-host/common.sh
+rc_env
+
+name="$(rc_name)"
+
+if rc_login_ready; then
+  echo "Remote Control is already signed in:"
+  claude auth status --text 2>/dev/null || true
+  read -r -p "Sign in again with a different account? [y/N] " again
+  [[ "${again}" =~ ^[Yy] ]] || exit 0
+fi
+
+cat <<EOF
+
+Signing in Remote Control for: ${name}
+  1. Open the URL printed below in your browser and approve.
+  2. Paste the code back here.
+(Use a Claude Pro/Max/Team/Enterprise account. A \`claude setup-token\`
+token cannot be used for Remote Control.)
+
+EOF
+
+claude auth login --claudeai
+echo
+if rc_login_ready; then
+  echo "Signed in. Remote Control starts within ~15s as \"${name}\"."
+  echo "Open https://claude.ai/code (or the Claude app) and pick that environment."
+else
+  echo "No usable claude.ai login detected yet. Run claude-rc-login to retry."
+  exit 1
+fi

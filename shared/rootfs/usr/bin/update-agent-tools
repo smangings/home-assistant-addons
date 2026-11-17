@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Try to refresh Multica, Claude Code, Cursor Agent, and Pi.
-# Called from /run.sh before the daemon starts. Failures are logged, not fatal.
+# Called from services.d/multica/run once per container start. Failures are logged, not fatal.
 # Each step is time-bounded. Installs land on /data so they survive a container recreate.
 # A newer image copy replaces a stale /data copy before any download, so a failed
 # download cannot hide the version shipped in the image.

@@ -1,0 +1,74 @@
+name: Agent Host (read-only)
+version: "0.4.0"
+slug: agent_host_ro
+description: >-
+  Agent Host (read-only): Claude Code Remote Control, an optional Cursor My
+  Machines worker and the Multica daemon, with read-only Home Assistant
+  config/share/media mounts and a writable /workspace.
+url: https://github.com/smangings/home-assistant-addons/tree/main/agent_host_ro
+arch:
+  - aarch64
+  - amd64
+# Required for s6-overlay v3: Docker must not inject tini as PID 1.
+init: false
+startup: services
+boot: auto
+hassio_api: true
+hassio_role: default
+homeassistant_api: true
+# Web terminal (sign-in for Remote Control). Caddy admits only the ingress proxy.
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:robot-outline
+panel_title: Agent Host RO
+panel_admin: true
+map:
+  - type: homeassistant_config
+    read_only: true
+    path: /config
+  - type: share
+    read_only: true
+  - type: ssl
+    read_only: true
+  - type: media
+    read_only: true
+options:
+  claude_remote_control: true
+  claude_remote_control_name: ""
+  claude_remote_control_directory: "/config"
+  claude_remote_control_permission_mode: "default"
+  claude_code_oauth_token: ""
+  claude_api_key: ""
+  cursor_api_key: ""
+  cursor_worker: false
+  cursor_worker_name: ""
+  cursor_worker_dirs: ""
+  multica_token: ""
+  multica_server_url: "https://api.multica.ai"
+  multica_app_url: "https://multica.ai"
+  multica_workspace_id: ""
+  multica_device_name: ""
+  multica_runtime_name: ""
+  multica_max_concurrent_tasks: 2
+  pi_openrouter_api_key: ""
+  pi_openrouter_model: "anthropic/claude-sonnet-4"
+schema:
+  claude_remote_control: bool
+  claude_remote_control_name: str?
+  claude_remote_control_directory: str?
+  claude_remote_control_permission_mode: list(default|acceptEdits|plan|auto|bypassPermissions)
+  claude_code_oauth_token: password?
+  claude_api_key: password?
+  cursor_api_key: password?
+  cursor_worker: bool
+  cursor_worker_name: str?
+  cursor_worker_dirs: str?
+  multica_token: password?
+  multica_server_url: url
+  multica_app_url: url
+  multica_workspace_id: str?
+  multica_device_name: str?
+  multica_runtime_name: str?
+  multica_max_concurrent_tasks: int(1,20)
+  pi_openrouter_api_key: password?
+  pi_openrouter_model: str?

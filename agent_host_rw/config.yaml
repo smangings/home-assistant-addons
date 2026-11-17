@@ -1,0 +1,77 @@
+name: Agent Host (read-write)
+version: "0.4.0"
+slug: agent_host_rw
+description: >-
+  Agent Host (read-write): Claude Code Remote Control, an optional Cursor My
+  Machines worker and the Multica daemon, with read-write Home Assistant
+  config/share/media mounts. Set auto_stop_minutes to turn the whole add-on
+  (Remote Control included) off that many minutes after start.
+url: https://github.com/smangings/home-assistant-addons/tree/main/agent_host_rw
+arch:
+  - aarch64
+  - amd64
+# Required for s6-overlay v3: Docker must not inject tini as PID 1.
+init: false
+startup: services
+boot: auto
+hassio_api: true
+hassio_role: default
+homeassistant_api: true
+# Web terminal (sign-in for Remote Control). Caddy admits only the ingress proxy.
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:robot-outline
+panel_title: Agent Host RW
+panel_admin: true
+map:
+  - type: homeassistant_config
+    read_only: false
+    path: /config
+  - type: share
+    read_only: false
+  - type: ssl
+    read_only: true
+  - type: media
+    read_only: false
+options:
+  claude_remote_control: true
+  claude_remote_control_name: ""
+  claude_remote_control_directory: "/config"
+  claude_remote_control_permission_mode: "default"
+  claude_code_oauth_token: ""
+  claude_api_key: ""
+  cursor_api_key: ""
+  cursor_worker: false
+  cursor_worker_name: ""
+  cursor_worker_dirs: ""
+  multica_token: ""
+  multica_server_url: "https://api.multica.ai"
+  multica_app_url: "https://multica.ai"
+  multica_workspace_id: ""
+  multica_device_name: ""
+  multica_runtime_name: ""
+  multica_max_concurrent_tasks: 2
+  pi_openrouter_api_key: ""
+  pi_openrouter_model: "anthropic/claude-sonnet-4"
+  auto_stop_minutes: 0
+schema:
+  claude_remote_control: bool
+  claude_remote_control_name: str?
+  claude_remote_control_directory: str?
+  claude_remote_control_permission_mode: list(default|acceptEdits|plan|auto|bypassPermissions)
+  claude_code_oauth_token: password?
+  claude_api_key: password?
+  cursor_api_key: password?
+  cursor_worker: bool
+  cursor_worker_name: str?
+  cursor_worker_dirs: str?
+  multica_token: password?
+  multica_server_url: url
+  multica_app_url: url
+  multica_workspace_id: str?
+  multica_device_name: str?
+  multica_runtime_name: str?
+  multica_max_concurrent_tasks: int(1,20)
+  pi_openrouter_api_key: password?
+  pi_openrouter_model: str?
+  auto_stop_minutes: int(0,1440)

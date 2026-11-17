@@ -1,0 +1,48 @@
+#!/command/with-contenv bash
+# Claude Code Remote Control for this add-on.
+# Waits until a claude.ai login exists in the isolated HOME, then runs
+# `claude remote-control` in the configured directory.
+#
+# Restart policy: disabled -> stay down; any exit -> restart after 10s
+# (back to waiting for a login if it expired).
+set -uo pipefail
+# shellcheck source=/dev/null
+source /usr/lib/agent-host/common.sh
+SVC=remote-control
+COMPONENT=remote_control
+log() { echo "[${SVC}] $*"; }
+
+rc_env
+
+if ! ah_bool claude_remote_control true; then
+  log "disabled (claude_remote_control: false)"
+  ah_publish "${COMPONENT}" disabled "claude_remote_control option is off"
+  ah_stay_down "${SVC}"
+  exit 0
+fi
+
+name="$(rc_name)"
+dir="$(rc_directory)"
+perm="$(ah_option claude_remote_control_permission_mode default)"
+claude-rc-seed "${dir}" || log "warning: could not seed ${HOME}/.claude.json"
+
+if ! rc_login_ready; then
+  log "No claude.ai login yet. Open the Agent Host sidebar panel in Home Assistant"
+  log "(it offers the sign-in), or run: claude-rc-login"
+  ah_publish "${COMPONENT}" waiting_for_login "Open the Agent Host panel and sign in"
+  until rc_login_ready; do
+    sleep 15 & wait $!
+  done
+  log "login found"
+fi
+
+args=(remote-control --name "${name}" --spawn same-dir)
+if [[ "${perm}" != "default" ]]; then
+  args+=(--permission-mode "${perm}")
+fi
+
+cd "${dir}" || exit 1
+log "starting as \"${name}\" in ${dir} (permission mode: ${perm}, claude $(claude --version 2>/dev/null | head -1))"
+ah_publish "${COMPONENT}" ready "Remote Control \"${name}\" in ${dir}"
+ah_run claude "${args[@]}"
+ah_restart_after "${SVC}" "${COMPONENT}" 10 $?

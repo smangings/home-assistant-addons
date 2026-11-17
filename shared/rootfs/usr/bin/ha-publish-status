@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Publish Multica daemon lifecycle status to Home Assistant Core.
+# Publish Agent Host component lifecycle status to Home Assistant Core.
 # Allowed in both RO and RW add-ons (bypasses ha-api's RO write block).
-# Usage: ha-publish-status STATE [message]
-# States: starting | authenticated | ready | error | stopped
+# Usage: [STATUS_COMPONENT=daemon|remote_control|cursor_worker] ha-publish-status STATE [message]
+# States: starting | authenticated | waiting_for_login | ready | error | disabled | stopped
 set -euo pipefail
 
 STATE="${1:-}"
@@ -17,19 +17,34 @@ fi
 
 ACCESS_MODE="${MULTICA_ACCESS_MODE:-rw}"
 case "${ACCESS_MODE}" in
-  ro)
-    ENTITY_ID="sensor.multica_daemon_ro_status"
-    FRIENDLY_NAME="Multica Daemon RO Status"
+  ro) MODE=ro; MODE_LABEL=RO ;;
+  *) MODE=rw; MODE_LABEL=RW ;;
+esac
+
+# Entity ids keep the historical sensor.multica_daemon_<mode>_status for the
+# daemon so existing automations keep working.
+COMPONENT="${STATUS_COMPONENT:-daemon}"
+case "${COMPONENT}" in
+  remote_control)
+    ENTITY_ID="sensor.claude_remote_control_${MODE}_status"
+    FRIENDLY_NAME="Claude Remote Control ${MODE_LABEL} Status"
+    ;;
+  cursor_worker)
+    ENTITY_ID="sensor.cursor_worker_${MODE}_status"
+    FRIENDLY_NAME="Cursor Worker ${MODE_LABEL} Status"
     ;;
   *)
-    ENTITY_ID="sensor.multica_daemon_rw_status"
-    FRIENDLY_NAME="Multica Daemon RW Status"
+    COMPONENT=daemon
+    ENTITY_ID="sensor.multica_daemon_${MODE}_status"
+    FRIENDLY_NAME="Multica Daemon ${MODE_LABEL} Status"
     ;;
 esac
 
 case "${STATE}" in
   starting) ICON="mdi:timer-sand" ;;
   authenticated) ICON="mdi:key-check" ;;
+  waiting_for_login) ICON="mdi:account-key" ;;
+  disabled) ICON="mdi:minus-circle-outline" ;;
   ready) ICON="mdi:check-circle" ;;
   error) ICON="mdi:alert-circle" ;;
   stopped) ICON="mdi:stop-circle" ;;
@@ -51,6 +66,7 @@ BODY="$(
     --arg friendly_name "${FRIENDLY_NAME}" \
     --arg icon "${ICON}" \
     --arg access_mode "${ACCESS_MODE}" \
+    --arg component "${COMPONENT}" \
     --arg message "${MESSAGE}" \
     '{
       state: $state,
@@ -58,7 +74,8 @@ BODY="$(
         {
           friendly_name: $friendly_name,
           icon: $icon,
-          access_mode: $access_mode
+          access_mode: $access_mode,
+          component: $component
         }
         + (if $message == "" then {} else {message: $message} end)
       )
@@ -66,6 +83,7 @@ BODY="$(
 )"
 
 if curl -fsS \
+  --max-time 10 \
   -X POST \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \

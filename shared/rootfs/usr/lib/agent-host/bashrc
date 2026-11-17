@@ -1,0 +1,9 @@
+# shellcheck shell=bash
+# rcfile for the ingress terminal. Not a login shell on purpose: Debian's
+# /etc/profile resets PATH, which would hide the updater's newer CLIs.
+[[ -f /etc/bash.bashrc ]] && source /etc/bash.bashrc
+# shellcheck source=/dev/null
+source /usr/lib/agent-host/common.sh
+rc_env
+PS1="\[\e[1;35m\][agent-host $(ah_mode_label)]\[\e[0m\] \w \$ "
+alias ll='ls -la'

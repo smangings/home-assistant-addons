@@ -1,36 +1,24 @@
 #!/usr/bin/env bash
-# Copy shared build inputs into each add-on folder (HA builds from the add-on dir only).
+# Copy shared/ into each add-on folder. Supervisor builds every add-on from
+# its own folder only, so the shared Dockerfile, build.yaml and rootfs/ must
+# be copied in. Each add-on's Dockerfile.overlay (its RO/RW ENV) is appended.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-chmod_scripts() {
-  local base="$1"
-  chmod a+x "${base}/run.sh" 2>/dev/null || true
-  find "${base}/rootfs/usr/bin" -type f -exec chmod a+x {} + 2>/dev/null || true
-  find "${base}/rootfs/etc/services.d" -type f -exec chmod a+x {} + 2>/dev/null || true
-  find "${base}/rootfs/etc/cont-init.d" -type f -exec chmod a+x {} + 2>/dev/null || true
+make_scripts_executable() {
+  find "$1/rootfs/usr/bin" "$1/rootfs/etc/services.d" "$1/rootfs/etc/cont-init.d" \
+    -type f -exec chmod a+x {} +
 }
-
-chmod_scripts "${ROOT}/shared"
-chmod a+x "${ROOT}/shared/run.sh"
 
 sync_addon() {
   local dest="$1"
-  mkdir -p "${dest}"
-  rsync -a --delete \
-    --exclude '.DS_Store' \
-    "${ROOT}/shared/Dockerfile" \
-    "${ROOT}/shared/build.yaml" \
-    "${ROOT}/shared/run.sh" \
-    "${dest}/"
-  mkdir -p "${dest}/rootfs"
-  rsync -a --delete "${ROOT}/shared/rootfs/" "${dest}/rootfs/"
-  if [[ -f "${dest}/Dockerfile.overlay" ]]; then
-    cat "${dest}/Dockerfile.overlay" >> "${dest}/Dockerfile"
-  fi
-  chmod_scripts "${dest}"
+  cp "${ROOT}/shared/Dockerfile" "${ROOT}/shared/build.yaml" "${dest}/"
+  rsync -a --delete --exclude '.DS_Store' "${ROOT}/shared/rootfs/" "${dest}/rootfs/"
+  cat "${dest}/Dockerfile.overlay" >> "${dest}/Dockerfile"
+  make_scripts_executable "${dest}"
   echo "synced ${dest}"
 }
 
-sync_addon "${ROOT}/multica_ro"
-sync_addon "${ROOT}/multica_rw"
+make_scripts_executable "${ROOT}/shared"
+sync_addon "${ROOT}/agent_host_ro"
+sync_addon "${ROOT}/agent_host_rw"

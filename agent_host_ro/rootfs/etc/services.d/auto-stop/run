@@ -1,0 +1,83 @@
+#!/command/with-contenv bash
+# Write-access window for the read-write add-on (`auto_stop_minutes`).
+# Asks Supervisor to stop the whole add-on that many minutes after the
+# container started. Independent of Multica, because Remote Control and the
+# Cursor worker can edit /config too.
+#
+# The deadline is recorded once per container start (/run is cleared on
+# stop), so a restart of this service resumes the same deadline instead of
+# opening a new window. A shutdown signal exits without calling Supervisor.
+#
+# Restart policy: RO add-on, auto_stop_minutes 0, or done -> stay down;
+# an unexpected exit -> s6 restarts it and it resumes the same deadline.
+set -uo pipefail
+# shellcheck source=/dev/null
+source /usr/lib/agent-host/common.sh
+SVC=auto-stop
+DEADLINE_FILE=/run/agent-host-auto-stop.deadline
+log() { echo "[${SVC}] $*"; }
+ah_ha_env
+
+trap 'log "cancelled (add-on stopping)"; exit 0' TERM INT
+
+if [[ "${MULTICA_ACCESS_MODE:-rw}" != "rw" ]]; then
+  ah_stay_down "${SVC}"
+  exit 0
+fi
+
+minutes="$(ah_option auto_stop_minutes 0)"
+if [[ ! "${minutes}" =~ ^[0-9]+$ ]] || (( 10#${minutes} == 0 )); then
+  log "write access stays on (auto_stop_minutes=${minutes})"
+  ah_stay_down "${SVC}"
+  exit 0
+fi
+# 10# so a hand-edited "08" is decimal, not octal.
+minutes=$((10#${minutes}))
+
+if [[ -s "${DEADLINE_FILE}" ]]; then
+  deadline="$(cat "${DEADLINE_FILE}")"
+  log "resuming: add-on stops at $(date -d "@${deadline}" '+%Y-%m-%d %H:%M:%S %Z')"
+else
+  deadline=$(( $(date +%s) + minutes * 60 ))
+  printf '%s\n' "${deadline}" >"${DEADLINE_FILE}"
+  log "write-access add-on will stop in ${minutes} minutes at $(date -d "@${deadline}" '+%Y-%m-%d %H:%M:%S %Z')"
+fi
+
+remaining=$(( deadline - $(date +%s) ))
+if (( remaining > 0 )); then
+  sleep "${remaining}" & wait $!
+fi
+log "auto-stop reached (${minutes} minutes); stopping add-on"
+
+if [[ -z "${SUPERVISOR_TOKEN:-}" ]]; then
+  log "error: SUPERVISOR_TOKEN is not set; add-on was not stopped"
+  ah_publish daemon error "Auto-stop failed: SUPERVISOR_TOKEN missing"
+  ah_stay_down "${SVC}"
+  exit 0
+fi
+
+# Retry every 15s, then once a minute after the 5th failure.
+attempt=1
+delay=15
+told_error=0
+until curl -fsS --max-time 30 -X POST \
+        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+        -o /dev/null \
+        http://supervisor/addons/self/stop; do
+  log "warning: Supervisor stop failed (attempt ${attempt})"
+  if (( told_error == 0 )); then
+    ah_publish daemon error "Auto-stop failed; will keep retrying"
+    told_error=1
+  fi
+  if (( attempt == 5 )); then
+    log "warning: still unable to stop; retrying once a minute"
+    delay=60
+  fi
+  attempt=$((attempt + 1))
+  sleep "${delay}" & wait $!
+done
+
+log "Supervisor accepted stop"
+ah_publish daemon stopped "Auto-stopped after ${minutes} minutes"
+ah_stay_down "${SVC}"
+exit 0

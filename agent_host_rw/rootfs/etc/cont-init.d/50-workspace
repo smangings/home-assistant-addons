@@ -1,0 +1,13 @@
+#!/command/with-contenv bash
+# Writable, persistent agent workspace: /workspace -> /data/workspace.
+# Critical for the RO config mount variant, Multica local_directory and
+# Cursor worker checkouts. The image must not create /workspace itself
+# (no `WORKDIR /workspace`), or this link can never be made.
+mkdir -p /data/workspace
+chmod 0755 /data/workspace
+if [[ ! -e /workspace || -L /workspace ]]; then
+  ln -sfn /data/workspace /workspace
+  echo "[workspace] persistent /workspace -> /data/workspace"
+else
+  echo "[workspace] WARNING: /workspace is a real directory; its contents will not persist"
+fi

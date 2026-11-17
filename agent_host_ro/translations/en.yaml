@@ -1,0 +1,58 @@
+configuration:
+  claude_remote_control:
+    name: Claude Remote Control
+    description: Run Claude Code Remote Control so this add-on appears as "HA Agent Host (RO)" at claude.ai/code. Sign in once from the Agent Host RO sidebar panel.
+  claude_remote_control_name:
+    name: Remote Control name
+    description: Environment name at claude.ai/code. Blank = "HA Agent Host (RO)". "(RO)" is appended if the name does not already say RO/read-only.
+  claude_remote_control_directory:
+    name: Remote Control directory
+    description: Directory Remote Control sessions start in (default /config — read-only in this add-on).
+  claude_remote_control_permission_mode:
+    name: Remote Control permission mode
+    description: Permission mode for Remote Control sessions. "default" asks for approval in claude.ai/code before edits and commands.
+  claude_code_oauth_token:
+    name: Claude Code OAuth token (Multica)
+    description: Pro/Max token from `claude setup-token` for the Multica daemon's Claude runtime. Not used by Remote Control, which signs in from the sidebar panel.
+  claude_api_key:
+    name: Claude API key (Multica)
+    description: Anthropic Console/API key (API billing) for the Multica daemon's Claude runtime. Not used by Remote Control.
+  cursor_api_key:
+    name: Cursor API key
+    description: Cursor personal user API key — headless Cursor Agent auth and the My Machines worker
+  cursor_worker:
+    name: Cursor My Machines worker
+    description: Run `agent worker start` so this add-on appears under Cursor My Machines. Needs cursor_api_key to be a personal user API key.
+  cursor_worker_name:
+    name: Cursor worker name
+    description: Machine name in Cursor (used by worker=<name> triggers). Blank = "ha-agent-host-ro"; "-ro" is appended if missing.
+  cursor_worker_dirs:
+    name: Cursor worker directories
+    description: Colon-separated git checkouts to register. Blank = /config (if it has a git remote) plus each /workspace/* checkout with a remote.
+  multica_token:
+    name: Multica token
+    description: Personal access token (mul_…) from Multica Settings → API Tokens. Leave blank to run without the Multica daemon.
+  multica_server_url:
+    name: Server URL
+    description: Multica API base URL
+  multica_app_url:
+    name: App URL
+    description: Multica web app URL
+  multica_workspace_id:
+    name: Workspace ID
+    description: Optional workspace to select after login
+  multica_device_name:
+    name: Device name
+    description: Multica computer name. Blank = "HA Agent Host (RO)"; "(RO)" is appended if missing.
+  multica_runtime_name:
+    name: Runtime name
+    description: Leave blank so Claude, Cursor, and Pi each register as separate runtimes.
+  multica_max_concurrent_tasks:
+    name: Max concurrent tasks
+    description: Maximum agent tasks this daemon runs in parallel
+  pi_openrouter_api_key:
+    name: OpenRouter API key
+    description: API key so the Pi agent can call OpenRouter models
+  pi_openrouter_model:
+    name: OpenRouter model
+    description: Default Pi model id on OpenRouter (author/model)

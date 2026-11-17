@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Pre-answer Claude Code's interactive first-run prompts for Remote Control,
+# which has no terminal to ask on: workspace trust for the session dirs and
+# the one-time "Enable Remote Control?" dialog. Also writes a user-level
+# CLAUDE.md so every RC session knows which add-on (RO/RW) it is in.
+# Idempotent; run with rc_env already applied (HOME=/data/remote-control).
+set -euo pipefail
+# shellcheck source=/dev/null
+source /usr/lib/agent-host/common.sh
+
+dir="${1:-$(rc_directory)}"
+cfg="${HOME}/.claude.json"
+[[ -s "${cfg}" ]] || printf '%s\n' '{}' >"${cfg}"
+
+tmp="$(mktemp)"
+jq --arg dir "${dir}" \
+  '.projects = (.projects // {})
+   | reduce ([$dir, "/config", "/workspace"] | unique[]) as $p (.;
+       .projects[$p] = ((.projects[$p] // {}) + {hasTrustDialogAccepted: true}))
+   | .remoteDialogSeen = true
+   | .hasCompletedOnboarding = true' \
+  "${cfg}" >"${tmp}"
+mv "${tmp}" "${cfg}"
+chmod 600 "${cfg}"
+
+label="$(ah_mode_label)"
+if [[ "${label}" == "RO" ]]; then
+  config_access="read-only (the mount itself is read-only; edits fail with EROFS)"
+  api_note="\`ha-api\` refuses non-GET requests in this add-on."
+else
+  config_access="read-write — edits take effect in Home Assistant"
+  api_note="\`ha-api\` can call services (POST). Validate with \`ha-api POST /config/core/check_config\` before restarting Core."
+fi
+
+mkdir -p "${HOME}/.claude"
+cat >"${HOME}/.claude/CLAUDE.md" <<EOF
+<!-- Managed by the Agent Host add-on; rewritten on every start. -->
+# Environment: $(rc_name)
+
+You are running inside a Home Assistant add-on (**${label}**), reached through
+Claude Code Remote Control.
+
+| Path | Access |
+|------|--------|
+| \`/config\` | Home Assistant configuration — ${config_access} |
+| \`/workspace\` | read-write scratch / git clones (persisted) |
+| \`/share\`, \`/media\` | ${label} mounts |
+
+Home Assistant API helpers: \`ha-states\`, \`ha-history <entity>\`, \`ha-api GET /states\`.
+${api_note}
+EOF

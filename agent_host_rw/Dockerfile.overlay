@@ -1,0 +1,7 @@
+
+# Access-mode defaults for this add-on variant (appended by sync-addons.sh).
+# AGENT_HOST_MODE_LABEL drives every environment name (agent-host-name).
+ENV \
+    MULTICA_ACCESS_MODE=rw \
+    AGENT_HOST_MODE_LABEL=RW \
+    MULTICA_DEFAULT_RUNTIME_NAME=""
