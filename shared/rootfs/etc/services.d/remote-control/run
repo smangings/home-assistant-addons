@@ -12,6 +12,33 @@ SVC=remote-control
 COMPONENT=remote_control
 log() { echo "[${SVC}] $*"; }
 
+# `claude remote-control` redraws its status panel (a "·✔︎· Connected …" line
+# plus a few detail lines) about once a second, even with no terminal, which
+# floods the add-on log. Print each panel only when it differs from the last
+# one printed. Timestamped event lines ("[18:31:31] …") pass straight through.
+print_status_changes() {
+  local line panel="" last_panel=""
+  flush_panel() {
+    if [[ -n "${panel}" && "${panel}" != "${last_panel}" ]]; then
+      printf '%s\n' "${panel}"
+      last_panel="${panel}"
+    fi
+    panel=""
+  }
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ "${line}" == "·"* ]]; then        # a new status panel starts
+      flush_panel
+      panel="${line}"
+    elif [[ "${line}" == "["* || -z "${panel}" ]]; then  # event line
+      flush_panel
+      printf '%s\n' "${line}"
+    else                                     # rest of the current panel
+      panel+=$'\n'"${line}"
+    fi
+  done
+  flush_panel
+}
+
 rc_env
 
 if ! ah_bool claude_remote_control true; then
@@ -44,5 +71,8 @@ fi
 cd "${dir}" || exit 1
 log "starting as \"${name}\" in ${dir} (permission mode: ${perm}, claude $(claude --version 2>/dev/null | head -1))"
 ah_publish "${COMPONENT}" ready "Remote Control \"${name}\" in ${dir}"
-ah_run claude "${args[@]}"
+# Strip terminal escape codes and carriage returns so identical panels compare
+# equal.
+ah_run claude "${args[@]}" \
+  > >(sed -u -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\r$//' | print_status_changes)
 ah_restart_after "${SVC}" "${COMPONENT}" 10 $?
