@@ -1,0 +1,65 @@
+# Checks every PR before merge, including the weekly dependency-update PRs.
+# The Dockerfile verifies each download's SHA256/SHA512, so the builds below
+# are what catch a wrong or made-up checksum, for both architectures.
+name: Verify add-ons
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: PyYAML for the check script
+        run: python3 -c 'import yaml' 2>/dev/null || sudo apt-get install -y python3-yaml
+
+      - name: Add-on folders match shared/
+        run: |
+          ./sync-addons.sh
+          if ! git diff --exit-code --stat; then
+            echo "::error::Add-on folders are out of sync with shared/. Run ./sync-addons.sh and commit."
+            exit 1
+          fi
+
+      - name: Dockerfile ARG defaults match build.yaml
+        run: python3 .github/scripts/check-addons.py pins
+
+      - name: Changed add-ons bump version and changelog
+        if: github.event_name == 'pull_request'
+        run: python3 .github/scripts/check-addons.py versions "origin/${GITHUB_BASE_REF}"
+
+  build:
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        addon: [agent_host_ro, agent_host_rw]
+        arch: [amd64, aarch64]
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: PyYAML for the check script
+        run: python3 -c 'import yaml' 2>/dev/null || sudo apt-get install -y python3-yaml
+
+      - name: Build ${{ matrix.addon }} (${{ matrix.arch }})
+        run: |
+          mapfile -t args < <(python3 .github/scripts/check-addons.py build-args "${{ matrix.addon }}" "${{ matrix.arch }}")
+          docker build "${args[@]}" -t "local/${{ matrix.addon }}:${{ matrix.arch }}" "${{ matrix.addon }}"
