@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Fix: the sidebar terminal no longer sits blank for about 30s before showing anything. Inside a terminal, `timeout` put `claude auth status` in a background process group, and the kernel stopped it until the 30s timeout
+- Fix: the terminal no longer reports "signed in" and skips the sign-in prompt when there is no login. jq 1.6 treats empty output as success under `-e`; the login check now compares jq's printed result instead
+
 ## 0.4.0
 
 - **New add-on: Agent Host (read-only)**, slug `agent_host_ro`. It replaces **Multica Daemon (read-only)** (`multica_ro`). Because the slug changed, this is a fresh install: re-enter options, sign in again, and uninstall the old add-on (see "Moving from Multica Daemon" in the docs). The version history below is from `multica_ro`

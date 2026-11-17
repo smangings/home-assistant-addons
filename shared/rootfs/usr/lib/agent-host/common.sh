@@ -133,19 +133,29 @@ rc_directory() {
 # use. Prefers the CLI's own view (stable contract); falls back to the
 # credentials file if the installed CLI predates `auth status --json`.
 rc_login_ready() {
-  local status
-  status="$(timeout 30 claude auth status --json 2>/dev/null || true)"
-  if jq -e 'type == "object"' >/dev/null 2>&1 <<<"${status}"; then
-    jq -e '.loggedIn == true
-           and (.authMethod == "claude.ai" or .storedClaudeAiLogin == true)' \
-      >/dev/null 2>&1 <<<"${status}"
-    return
-  fi
-  # Fallback. A blanked file ("" values after refresh-token expiry) and an
-  # expired refresh token both count as not ready.
-  jq -e '.claudeAiOauth
-    | (.refreshToken | type == "string" and length > 0)
-      and ((.refreshTokenExpiresAt | type) != "number"
-           or .refreshTokenExpiresAt > (now * 1000))' \
-    "${HOME}/.claude/.credentials.json" >/dev/null 2>&1
+  local status verdict
+  # stdin from /dev/null and --foreground: inside the web terminal, plain
+  # `timeout` moves claude into a background process group, the kernel stops
+  # it when it touches the TTY, and every check hung for the full 30s.
+  status="$(timeout --foreground 30 claude auth status --json </dev/null 2>/dev/null || true)"
+  # Compare jq's printed verdict rather than exit codes: jq 1.6 (bookworm)
+  # exits 0 on empty input even with -e, which made a failed check look like
+  # a login.
+  verdict="$(jq -r 'if type == "object"
+      then (.loggedIn == true
+            and (.authMethod == "claude.ai" or .storedClaudeAiLogin == true))
+      else "unknown" end' <<<"${status}" 2>/dev/null)"
+  case "${verdict}" in
+    true) return 0 ;;
+    false) return 1 ;;
+  esac
+  # Fallback when the CLI gave no usable answer. A blanked file ("" values
+  # after refresh-token expiry) and an expired refresh token both count as
+  # not ready.
+  verdict="$(jq -r '.claudeAiOauth
+    | ((.refreshToken | type == "string" and length > 0)
+       and ((.refreshTokenExpiresAt | type) != "number"
+            or .refreshTokenExpiresAt > (now * 1000)))' \
+    "${HOME}/.claude/.credentials.json" 2>/dev/null)"
+  [[ "${verdict}" == "true" ]]
 }
