@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- Fix: Remote Control no longer floods the add-on log. `claude remote-control` redraws its status panel about once a second; each panel is now logged only when it changes (connect, a session attaching, capacity). Timestamped events still pass through
+
 ## 0.4.1
 
 - Fix: the sidebar terminal no longer sits blank for about 30s before showing anything. Inside a terminal, `timeout` put `claude auth status` in a background process group, and the kernel stopped it until the 30s timeout
