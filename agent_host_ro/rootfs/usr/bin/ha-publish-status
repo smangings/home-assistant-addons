@@ -55,11 +55,6 @@ TOKEN="${HA_TOKEN:-${SUPERVISOR_TOKEN:-}}"
 BASE="${HA_URL:-http://supervisor/core/api}"
 BASE="${BASE%/}"
 
-if [[ -z "${TOKEN}" ]]; then
-  echo "ha-publish-status: SUPERVISOR_TOKEN / HA_TOKEN is not set; skipping (${STATE})" >&2
-  exit 0
-fi
-
 BODY="$(
   jq -n \
     --arg state "${STATE}" \
@@ -81,6 +76,23 @@ BODY="$(
       )
     }'
 )"
+
+# /run is cleared when the container stops. The keepalive service reads this
+# after a Core restart, which deletes states posted to /api/states.
+STATUS_DIR=/run/agent-host-status
+mkdir -p "${STATUS_DIR}"
+saved="$(mktemp "${STATUS_DIR}/.tmp.XXXXXX")"
+if jq -n --arg entity_id "${ENTITY_ID}" --argjson body "${BODY}" \
+  '{entity_id: $entity_id, body: $body}' >"${saved}"; then
+  mv -f "${saved}" "${STATUS_DIR}/${COMPONENT}.json"
+else
+  rm -f "${saved}"
+fi
+
+if [[ -z "${TOKEN}" ]]; then
+  echo "ha-publish-status: SUPERVISOR_TOKEN / HA_TOKEN is not set; skipping (${STATE})" >&2
+  exit 0
+fi
 
 if curl -fsS \
   --max-time 10 \

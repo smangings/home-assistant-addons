@@ -353,7 +353,7 @@ log info "Starting Multica daemon (access=${ACCESS_MODE}, device=${DEVICE_NAME})
 log info "HA config: /config (${ACCESS_MODE}) | agent workspace: /workspace (rw) | HA API: ${HA_URL}"
 # Best “setup finished” signal from bash alone — true heartbeat readiness would
 # need a hook inside the daemon.
-publish_status ready "Starting Multica daemon"
+publish_status ready "Multica daemon running"
 rc=0
 ah_run multica "${DAEMON_ARGS[@]}" || rc=$?
 if [[ "${rc}" -eq 0 || "${rc}" -eq "${EX_CONFIG}" ]]; then

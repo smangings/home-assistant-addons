@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3
+
+- Status sensors come back after a Home Assistant restart. The add-on keeps the last state and publishes it again within about 15 seconds when Core no longer has it. The add-on does not have to restart
+- The Multica ready message is `Multica daemon running`
+
 ## 0.4.2
 
 - Fix: Remote Control no longer floods the add-on log. `claude remote-control` redraws its status panel about once a second; each panel is now logged only when it changes (connect, a session attaching, capacity). Timestamped events still pass through
