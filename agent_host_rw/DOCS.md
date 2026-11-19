@@ -120,6 +120,8 @@ This add-on replaces **Multica Daemon (read-write)** under a new slug (`agent_ho
 
 A useful automation: notify when `sensor.claude_remote_control_rw_status` becomes `waiting_for_login`. That means the claude.ai login expired and needs the panel again.
 
+A Home Assistant restart clears these sensors. The add-on keeps the last state and publishes it again within about 15 seconds. The add-on does not have to restart.
+
 ## Runtimes & updates
 
 The image seeds Multica, Claude Code, Cursor Agent and Pi. Once per container start, the add-on tries to update them onto `/data`. If the image copy is newer it is kept, and a failed download falls back to what is already on disk. The update runs whether or not Multica is configured. Remote Control and the Cursor worker start in parallel, so on a first boot they may run the image's CLI version until the next restart.

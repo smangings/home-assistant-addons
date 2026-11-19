@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Republish saved component status when Home Assistant no longer has it.
+# A core restart deletes states posted to /api/states. This process stays up
+# with the container and puts the last status back. It does not post again
+# while Core already has the same state.
+set -uo pipefail
+
+DIR=/run/agent-host-status
+INTERVAL="${STATUS_KEEPALIVE_SECONDS:-15}"
+TOKEN="${HA_TOKEN:-${SUPERVISOR_TOKEN:-}}"
+BASE="${HA_URL:-http://supervisor/core/api}"
+BASE="${BASE%/}"
+
+log() { echo "[status-keepalive] $*"; }
+
+trap 'exit 0' TERM INT
+
+if ! [[ "${INTERVAL}" =~ ^[0-9]+$ ]] || (( INTERVAL < 5 )); then
+  INTERVAL=15
+fi
+
+# Sleep that returns as soon as the add-on is stopping.
+pause() {
+  sleep "$1" &
+  wait $! || exit 0
+}
+
+if [[ -z "${TOKEN}" ]]; then
+  log "SUPERVISOR_TOKEN / HA_TOKEN is not set; not publishing"
+  while true; do
+    pause 3600
+  done
+fi
+
+same_as_saved() {
+  jq -e --slurpfile want "$2" '
+    ($want[0].body) as $b
+    | .state == $b.state
+      and ((.attributes.message // "") == ($b.attributes.message // ""))
+      and ((.attributes.icon // "") == ($b.attributes.icon // ""))
+      and ((.attributes.access_mode // "") == ($b.attributes.access_mode // ""))
+      and ((.attributes.component // "") == ($b.attributes.component // ""))
+      and ((.attributes.friendly_name // "") == ($b.attributes.friendly_name // ""))
+  ' "$1" >/dev/null
+}
+
+post_saved() {
+  local file="$1" entity body
+  entity="$(jq -r '.entity_id' "${file}")"
+  body="$(jq -c '.body' "${file}")"
+  if curl -fsS --max-time 10 -X POST \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "${body}" \
+    "${BASE}/states/${entity}" >/dev/null; then
+    log "republished ${entity}=$(jq -r '.body.state' "${file}")"
+  else
+    log "failed to republish ${entity}"
+  fi
+}
+
+core_down=0
+while true; do
+  reachable=1
+  shopt -s nullglob
+  for file in "${DIR}"/*.json; do
+    [[ -f "${file}" ]] || continue
+    entity="$(jq -r '.entity_id // empty' "${file}" 2>/dev/null || true)"
+    [[ -n "${entity}" ]] || continue
+    tmp="$(mktemp)"
+    code="$(curl -sS -o "${tmp}" -w "%{http_code}" --max-time 10 \
+      -H "Authorization: Bearer ${TOKEN}" \
+      "${BASE}/states/${entity}" || true)"
+    case "${code}" in
+      200)
+        if ! same_as_saved "${tmp}" "${file}"; then
+          post_saved "${file}"
+        fi
+        ;;
+      404)
+        post_saved "${file}"
+        ;;
+      *)
+        reachable=0
+        rm -f "${tmp}"
+        break
+        ;;
+    esac
+    rm -f "${tmp}"
+  done
+  shopt -u nullglob
+  if (( reachable == 0 )); then
+    if (( core_down == 0 )); then
+      log "Core is not answering; will retry"
+      core_down=1
+    fi
+  elif (( core_down == 1 )); then
+    log "Core is answering again"
+    core_down=0
+  fi
+  pause "${INTERVAL}"
+done

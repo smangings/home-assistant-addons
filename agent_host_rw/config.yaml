@@ -1,5 +1,5 @@
 name: Agent Host (read-write)
-version: "0.4.2"
+version: "0.4.3"
 slug: agent_host_rw
 description: >-
   Agent Host (read-write): Claude Code Remote Control, an optional Cursor My
