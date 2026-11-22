@@ -142,7 +142,7 @@ RUN chmod a+x \
 WORKDIR /
 # Entrypoint /init (from HA base) is PID 1. Longruns live in /etc/services.d.
 # No CMD: s6 starts every service in /etc/services.d (multica, remote-control,
-# cursor-worker, terminal, caddy).
+# cursor-worker, terminal, caddy, status-keepalive).
 
 # Access-mode defaults for this add-on variant (appended by sync-addons.sh).
 # AGENT_HOST_MODE_LABEL drives every environment name (agent-host-name).

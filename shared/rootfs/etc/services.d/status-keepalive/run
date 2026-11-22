@@ -1,0 +1,6 @@
+#!/command/with-contenv bash
+# Puts the last component status back after Home Assistant Core restarts.
+# States posted to /api/states are deleted on a core restart. This service
+# stays up with the container and republishes them.
+set -uo pipefail
+exec /usr/bin/ha-status-keepalive
